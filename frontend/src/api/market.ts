@@ -15,3 +15,13 @@ export async function fetchKline(
   });
   return res.data;
 }
+
+export async function getMarketSettings(): Promise<any> {
+  const res = await apiClient.get('/market/settings');
+  return res.data;
+}
+
+export async function updateMarketSettings(payload: Record<string, unknown>): Promise<any> {
+  const res = await apiClient.post('/market/settings', payload);
+  return res.data;
+}

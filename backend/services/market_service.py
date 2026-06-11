@@ -92,6 +92,61 @@ class MarketDataService:
         result[-1] = price
         return result
 
+    _MARKET_HOURS_UTC = {
+        "A股": (1, 30, 7, 0),
+        "港股": (1, 30, 8, 0),
+        "美股": (13, 30, 20, 0),
+        "日股": (23, 30, 5, 0),
+        "韩股": (23, 30, 5, 0),
+        "欧洲": (7, 0, 15, 30),
+        "大宗商品": (0, 0, 23, 59),
+    }
+
+    @staticmethod
+    def _is_market_open(region: str, now_utc: datetime | None = None) -> bool:
+        """Check if market is currently open (UTC time, accounting for day boundary crossing)."""
+        if now_utc is None:
+            now_utc = datetime.utcnow()
+        
+        # Weekends closed (except commodities)
+        weekday = now_utc.weekday()
+        if weekday >= 5:
+            return region == "大宗商品"
+        
+        hours = MarketDataService._MARKET_HOURS_UTC.get(region)
+        if not hours:
+            return False
+        
+        start_h, start_m, end_h, end_m = hours
+        current_minutes = now_utc.hour * 60 + now_utc.minute
+        start_minutes = start_h * 60 + start_m
+        end_minutes = end_h * 60 + end_m
+        
+        # Market spans across day boundary (e.g., 23:30 UTC to 05:00 UTC next day)
+        if start_minutes > end_minutes:
+            return current_minutes >= start_minutes or current_minutes <= end_minutes
+        
+        # Market within same day
+        return start_minutes <= current_minutes <= end_minutes
+
+    @staticmethod
+    def _any_market_open(now_utc: datetime | None = None) -> bool:
+        return any(
+            MarketDataService._is_market_open(region, now_utc)
+            for region in MarketDataService._MARKET_HOURS_UTC
+        )
+
+    def get_market_status(self) -> dict:
+        now = datetime.utcnow()
+        return {
+            "utc_time": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "any_open": self._any_market_open(now),
+            "markets": {
+                region: self._is_market_open(region, now)
+                for region in self._MARKET_HOURS_UTC
+            },
+        }
+
     async def refresh_all(self) -> dict[str, list[IndexData]]:
         try:
             loop = asyncio.get_event_loop()
@@ -307,58 +362,142 @@ class MarketDataService:
             logger.error("腾讯备用API也失败: %s", e)
 
     def _fetch_global_indices(self, result: dict, now: datetime):
-        self._fetch_global_sina(result, now)
+        """Fetch global indices with primary akshare, fallback yfinance/Sina.
+        
+        Ensures sparkline and price come from same source to keep them consistent.
+        Prioritizes akshare for reliable Asian indices (JPY/KRW/GBX).
+        """
+        symbols = [s for s in GLOBAL_INDICES if s not in _SINA_COMMODITY_MAP]
 
-        existing_syms = set()
-        for indices in result.values():
-            for idx in indices:
-                existing_syms.add(idx.symbol)
+        # 1) Try akshare for global indices (best for Asia-Pacific)
+        try:
+            import akshare as ak
+            df = ak.stock_global_index_daily()
+            if df is not None and not df.empty:
+                for _, row in df.iterrows():
+                    try:
+                        symbol_ak = row.get('symbol', '')
+                        # Map common akshare symbols to our keys
+                        symbol = None
+                        for our_sym, aka_name in [
+                            ('^GSPC', 'S&P 500'), ('^DJI', 'DJIA'), ('^IXIC', 'NASDAQ'),
+                            ('^N225', 'Nikkei 225'), ('^KS11', 'KOSPI'), ('^FTSE', 'FTSE 100'),
+                            ('^GDAXI', 'DAX'), ('^FCHI', 'CAC 40'),
+                        ]:
+                            if aka_name.lower() in str(symbol_ak).lower() or aka_name.lower() in str(row.get('名称', '')).lower():
+                                symbol = our_sym
+                                break
+                        if not symbol:
+                            continue
+                        
+                        name = GLOBAL_INDICES.get(symbol, str(row.get('名称', symbol)))
+                        region = REGION_MAP.get(symbol, "其他")
+                        price = float(row.get('价格', row.get('close', 0)))
+                        if price <= 0:
+                            continue
+                        prev = float(row.get('昨收', row.get('open', price)))
+                        change = price - prev
+                        change_pct = (change / prev * 100) if prev else 0
+                        
+                        self._history[symbol].append(price)
+                        if len(self._history[symbol]) > 20:
+                            self._history[symbol] = self._history[symbol][-20:]
+                        
+                        idx = IndexData(
+                            symbol=symbol, name=name, region=region,
+                            price=round(price, 2), change=round(change, 2),
+                            change_percent=round(change_pct, 2),
+                            sparkline=self._history[symbol].copy(),
+                            updated_at=now,
+                        )
+                        result[region].append(idx)
+                        logger.info("全球(AKShare) %s: %.2f (%.2f%%)", name, price, change_pct)
+                    except Exception as e:
+                        logger.debug("解析AKShare行 失败: %s", e)
+        except Exception as e:
+            logger.warning("AKShare 全球指数不可用: %s", e)
 
-        missing = [s for s in GLOBAL_INDICES if s not in _SINA_COMMODITY_MAP and s not in existing_syms]
+        # Check populated
+        existing_syms = {idx.symbol for indices in result.values() for idx in indices}
+        missing = [s for s in symbols if s not in existing_syms]
+
+        # 2) Fallback to yfinance for missing
         if missing:
-            self._fetch_global_yfinance(result, now, missing)
+            try:
+                self._fetch_global_yfinance(result, now, missing)
+            except Exception as e:
+                logger.warning("yfinance 全球指数获取失败: %s", e)
 
+        # Recheck
+        existing_syms = {idx.symbol for indices in result.values() for idx in indices}
+        missing = [s for s in symbols if s not in existing_syms]
+
+        # 3) Final fallback to Sina
+        if missing:
+            try:
+                self._fetch_global_sina(result, now)
+            except Exception as e:
+                logger.warning("新浪全球指数补充失败: %s", e)
+
+        # Ensure commodities
         existing_commodities = {idx.symbol for idx in result.get("大宗商品", [])}
         missing_commodities = set(_SINA_COMMODITY_MAP.keys()) - existing_commodities
         if missing_commodities or not result.get("大宗商品"):
             self._fetch_commodities_sina(result, now)
 
     def _fetch_global_yfinance(self, result: dict, now: datetime, symbols: list[str]):
+        """Fetch daily close only for current day vs previous close to ensure data consistency.
+        
+        This prevents K-line vs sparkline inconsistencies caused by intraday data mismatches.
+        Uses end-of-day data exclusively to match what's shown in K-line charts.
+        """
         import yfinance as yf
         batch_size = 4
         for i in range(0, len(symbols), batch_size):
             batch = symbols[i:i + batch_size]
             try:
+                # Get daily data (most recent 5 days to ensure we have yesterday)
                 df = yf.download(
-                    tickers=batch, period="5d", interval="15m",
+                    tickers=batch, period="5d", interval="1d",
                     group_by="ticker", progress=False, threads=False,
                 )
                 if df is None or df.empty:
                     continue
+                    
                 for sym in batch:
                     try:
                         name = GLOBAL_INDICES[sym]
                         region = REGION_MAP.get(sym, "其他")
+                        
                         if len(batch) == 1:
                             ticker_df = df
                         elif sym in df.columns.get_level_values(0):
                             ticker_df = df[sym]
                         else:
                             continue
-                        prices = ticker_df["Close"].dropna()
-                        if len(prices) < 2:
+                        
+                        # Use Close column which is stable across calls
+                        closes = ticker_df["Close"].dropna()
+                        if len(closes) < 2:
                             continue
-                        current_price = float(prices.iloc[-1])
-                        prev_price = float(prices.iloc[-2])
-                        if current_price == 0 or prev_price == 0:
+                        
+                        current_price = float(closes.iloc[-1])
+                        prev_price = float(closes.iloc[-2])
+                        
+                        if current_price <= 0 or prev_price <= 0:
                             continue
+                        
                         change = current_price - prev_price
                         change_pct = (change / prev_price) * 100
+                        
+                        # Build sparkline from full history
                         if sym not in self._history or len(self._history[sym]) < 5:
-                            self._history[sym] = [float(p) for p in prices.tail(20).tolist()]
+                            self._history[sym] = [float(p) for p in closes.tolist()]
+                        
                         self._history[sym].append(current_price)
                         if len(self._history[sym]) > 20:
                             self._history[sym] = self._history[sym][-20:]
+                        
                         idx = IndexData(
                             symbol=sym, name=name, region=region,
                             price=round(current_price, 2),
@@ -448,6 +587,10 @@ class MarketDataService:
         return 7.25
 
     def _fetch_commodities_sina(self, result: dict, now: datetime):
+        """Fetch commodities from Sina (GC=F gold, CL=F oil, SI=F silver).
+        
+        For K-line consistency, ensure sparkline and current price come from the same daily source.
+        """
         existing = {idx.symbol for idx in result.get("大宗商品", [])}
         usd_cny = self._fetch_usd_cny()
         try:
@@ -471,15 +614,21 @@ class MarketDataService:
                         break
                 if not yf_sym or yf_sym in existing:
                     continue
+                
                 name = GLOBAL_INDICES.get(yf_sym, fields[0])
                 price = float(fields[0])
                 prev_close = float(fields[7]) if fields[7] else price
+                if price <= 0:
+                    continue
                 change = price - prev_close
                 change_pct = (change / prev_close * 100) if prev_close else 0
 
+                # Always append new price to history (consistent with real-time updates)
                 self._history[yf_sym].append(price)
                 if len(self._history[yf_sym]) > 20:
                     self._history[yf_sym] = self._history[yf_sym][-20:]
+                
+                # Use history-based sparkline if available, else synthetic
                 sparkline = self._history[yf_sym].copy() if len(self._history[yf_sym]) >= 5 \
                     else self._generate_sparkline(price, change)
 
@@ -658,28 +807,48 @@ class MarketDataService:
         }
 
     def _get_global_kline_yf(self, symbol: str, period: str, name: str) -> dict:
+        """Fetch K-line from yfinance using appropriate interval.
+        
+        Key: For daily/weekly K-lines, always use daily interval (1d, 1wk) 
+        to match the sparkline Close data which also uses daily closes.
+        """
         import yfinance as yf
-        if period == "minute":
-            kwargs = dict(tickers=symbol, period="1d", interval="5m", progress=False)
-        elif period == "5day":
-            kwargs = dict(tickers=symbol, period="5d", interval="15m", progress=False)
-        elif period == "week":
-            kwargs = dict(tickers=symbol, period="1y", interval="1wk", progress=False)
-        else:
-            kwargs = dict(tickers=symbol, period="6mo", interval="1d", progress=False)
-        df = yf.download(**kwargs)
-        if df is None or df.empty:
+        try:
+            if period == "minute":
+                # 1 day of 5-min data
+                kwargs = dict(tickers=symbol, period="1d", interval="5m", progress=False)
+            elif period == "5day":
+                # 5 days of 15-min data  
+                kwargs = dict(tickers=symbol, period="5d", interval="15m", progress=False)
+            elif period == "week":
+                # 1 year of weekly data
+                kwargs = dict(tickers=symbol, period="1y", interval="1wk", progress=False)
+            else:  # "day"
+                # 6 months of daily data
+                kwargs = dict(tickers=symbol, period="6mo", interval="1d", progress=False)
+            
+            df = yf.download(**kwargs)
+            if df is None or df.empty:
+                logger.warning("yfinance K线无数据: %s", symbol)
+                return {"dates": [], "opens": [], "highs": [], "lows": [], "closes": [], "volumes": [], "name": name}
+            
+            if isinstance(df.columns, pd.MultiIndex):
+                df = df[symbol] if symbol in df.columns.get_level_values(0) else df
+            
+            dates = df.index.strftime("%Y-%m-%d %H:%M").tolist() if period in ("minute", "5day") \
+                else df.index.strftime("%Y-%m-%d").tolist()
+            
+            result = {
+                "dates": dates,
+                "opens": df["Open"].round(2).tolist() if "Open" in df.columns else [0] * len(df),
+                "highs": df["High"].round(2).tolist() if "High" in df.columns else [0] * len(df),
+                "lows": df["Low"].round(2).tolist() if "Low" in df.columns else [0] * len(df),
+                "closes": df["Close"].round(2).tolist() if "Close" in df.columns else [0] * len(df),
+                "volumes": df["Volume"].astype(int).tolist() if "Volume" in df.columns else [0] * len(df),
+                "name": name,
+            }
+            logger.info("yfinance K线 %s/%s: %d条", symbol, period, len(dates))
+            return result
+        except Exception as e:
+            logger.error("yfinance K线获取失败 %s/%s: %s", symbol, period, e)
             return {"dates": [], "opens": [], "highs": [], "lows": [], "closes": [], "volumes": [], "name": name}
-        if isinstance(df.columns, pd.MultiIndex):
-            df = df[symbol] if symbol in df.columns.get_level_values(0) else df
-        dates = df.index.strftime("%Y-%m-%d %H:%M").tolist() if period in ("minute", "5day") \
-            else df.index.strftime("%Y-%m-%d").tolist()
-        return {
-            "dates": dates,
-            "opens": df["Open"].round(2).tolist(),
-            "highs": df["High"].round(2).tolist(),
-            "lows": df["Low"].round(2).tolist(),
-            "closes": df["Close"].round(2).tolist(),
-            "volumes": df["Volume"].astype(int).tolist() if "Volume" in df.columns else [0] * len(df),
-            "name": name,
-        }

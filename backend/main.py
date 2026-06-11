@@ -38,6 +38,8 @@ async def lifespan(app: FastAPI):
 
     scheduler = create_scheduler(market_service, news_service, settings)
     scheduler.start()
+    app.state.scheduler = scheduler
+    app.state.settings = settings
     logger.info("Scheduler started")
 
     asyncio.create_task(_initial_fetch(market_service, news_service))
