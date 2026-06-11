@@ -49,8 +49,9 @@ REGION_MAP = {
 
 _SINA_GLOBAL_MAP = {
     "^DJI": "gb_dji", "^IXIC": "gb_ixic", "^GSPC": "gb_inx",
-    "^N225": "int_nikkei", "^KS11": "int_kospi", "^FTSE": "int_ftse",
+    "^N225": "int_nikkei", "^FTSE": "int_ftse",
     "^GDAXI": "int_gdaxi", "^FCHI": "int_fchi",
+    # Note: KOSPI (^KS11) not available from Sina, will be fetched via yfinance
 }
 
 _SINA_COMMODITY_MAP = {
