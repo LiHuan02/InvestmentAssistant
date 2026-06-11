@@ -365,8 +365,9 @@ class MarketDataService:
     def _fetch_global_indices(self, result: dict, now: datetime):
         """Fetch global indices with Sina as primary source.
         
-        Sina is most reliable for Asian indices (JPY/KRW/GBX).
-        Strategy: Always try Sina first, fallback to akshare/yfinance for missing symbols.
+        Sina is most reliable for Asian indices (JPY/GBX).
+        Strategy: Try Sina first, then yfinance for missing (especially KOSPI/DAX/CAC),
+        akshare as final fallback.
         """
         # 1) Sina - most reliable for international indices (tested working)
         try:
@@ -378,52 +379,54 @@ class MarketDataService:
         existing_syms = {idx.symbol for indices in result.values() for idx in indices}
         missing = [s for s in GLOBAL_INDICES if s not in _SINA_COMMODITY_MAP and s not in existing_syms]
 
-        # 3) If missing, try akshare
+        # 3) yfinance for missing (especially KOSPI/DAX/CAC which Sina doesn't have)
         if missing:
-            try:
-                import akshare as ak
-                df = ak.stock_global_index_daily()
-                if df is not None and not df.empty:
-                    for _, row in df.iterrows():
-                        try:
-                            for our_sym in missing:
-                                name = GLOBAL_INDICES.get(our_sym)
-                                # Simple name match
-                                if name and name.lower() in str(row).lower():
-                                    region = REGION_MAP.get(our_sym, "其他")
-                                    price = float(row.get('价格', row.get('close', 0)))
-                                    if price > 0:
-                                        prev = float(row.get('昨收', row.get('open', price)))
-                                        change = price - prev
-                                        change_pct = (change / prev * 100) if prev else 0
-                                        
-                                        # Fresh sparkline from single daily data point + synthetic
-                                        self._history[our_sym] = [price]
-                                        sparkline = self._generate_sparkline(price, change) if len(self._history[our_sym]) < 5 \
-                                            else self._history[our_sym]
-                                        
-                                        idx = IndexData(
-                                            symbol=our_sym, name=name, region=region,
-                                            price=round(price, 2), change=round(change, 2),
-                                            change_percent=round(change_pct, 2),
-                                            sparkline=sparkline,
-                                            updated_at=now,
-                                        )
-                                        result[region].append(idx)
-                                        logger.info("全球(AKShare) %s: %.2f (%.2f%%)", name, price, change_pct)
-                                        missing.remove(our_sym)
-                                        break
-                        except Exception:
-                            pass
-            except Exception as e:
-                logger.warning("AKShare 全球指数不可用: %s", e)
-
-        # 4) Fallback to yfinance for any remaining
-        if missing:
+            logger.info("尝试 yfinance 获取缺失指数: %s", missing)
             try:
                 self._fetch_global_yfinance(result, now, missing)
             except Exception as e:
                 logger.warning("yfinance 全球指数获取失败: %s", e)
+
+        # 4) akshare as final fallback (if method available)
+        existing_syms = {idx.symbol for indices in result.values() for idx in indices}
+        missing = [s for s in GLOBAL_INDICES if s not in _SINA_COMMODITY_MAP and s not in existing_syms]
+        if missing:
+            try:
+                import akshare as ak
+                # Check if method exists before calling
+                if hasattr(ak, 'stock_global_index_daily'):
+                    df = ak.stock_global_index_daily()
+                    if df is not None and not df.empty:
+                        for _, row in df.iterrows():
+                            try:
+                                for our_sym in missing[:]:
+                                    name = GLOBAL_INDICES.get(our_sym)
+                                    # Simple name match
+                                    if name and name.lower() in str(row).lower():
+                                        region = REGION_MAP.get(our_sym, "其他")
+                                        price = float(row.get('价格', row.get('close', 0)))
+                                        if price > 0:
+                                            prev = float(row.get('昨收', row.get('open', price)))
+                                            change = price - prev
+                                            change_pct = (change / prev * 100) if prev else 0
+                                            
+                                            sparkline = self._generate_sparkline(price, change)
+                                            
+                                            idx = IndexData(
+                                                symbol=our_sym, name=name, region=region,
+                                                price=round(price, 2), change=round(change, 2),
+                                                change_percent=round(change_pct, 2),
+                                                sparkline=sparkline,
+                                                updated_at=now,
+                                            )
+                                            result[region].append(idx)
+                                            logger.info("全球(AKShare) %s: %.2f (%.2f%%)", name, price, change_pct)
+                                            missing.remove(our_sym)
+                                            break
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.debug("AKShare 全球指数不可用: %s", e)
 
         # Ensure commodities
         existing_commodities = {idx.symbol for idx in result.get("大宗商品", [])}
@@ -436,70 +439,73 @@ class MarketDataService:
         
         This prevents K-line vs sparkline inconsistencies caused by intraday data mismatches.
         Uses end-of-day data exclusively to match what's shown in K-line charts.
+        Requests one symbol at a time to avoid yfinance rate limiting.
         """
         import yfinance as yf
-        batch_size = 4
-        for i in range(0, len(symbols), batch_size):
-            batch = symbols[i:i + batch_size]
+        import time as time_module
+        
+        for sym in symbols:
             try:
                 # Get daily data (most recent 5 days to ensure we have yesterday)
+                # Request one at a time to avoid rate limiting
                 df = yf.download(
-                    tickers=batch, period="5d", interval="1d",
-                    group_by="ticker", progress=False, threads=False,
+                    tickers=sym, period="5d", interval="1d",
+                    progress=False, threads=False,
                 )
                 if df is None or df.empty:
+                    logger.warning("yfinance 无数据: %s", sym)
                     continue
                     
-                for sym in batch:
-                    try:
-                        name = GLOBAL_INDICES[sym]
-                        region = REGION_MAP.get(sym, "其他")
-                        
-                        if len(batch) == 1:
-                            ticker_df = df
-                        elif sym in df.columns.get_level_values(0):
-                            ticker_df = df[sym]
-                        else:
-                            continue
-                        
-                        # Use Close column which is stable across calls
-                        closes = ticker_df["Close"].dropna()
-                        if len(closes) < 2:
-                            continue
-                        
-                        current_price = float(closes.iloc[-1])
-                        prev_price = float(closes.iloc[-2])
-                        
-                        if current_price <= 0 or prev_price <= 0:
-                            continue
-                        
-                        change = current_price - prev_price
-                        change_pct = (change / prev_price) * 100
-                        
-                        # Build sparkline from full history
-                        if sym not in self._history or len(self._history[sym]) < 5:
-                            self._history[sym] = [float(p) for p in closes.tolist()]
-                        
-                        self._history[sym].append(current_price)
-                        if len(self._history[sym]) > 20:
-                            self._history[sym] = self._history[sym][-20:]
-                        
-                        idx = IndexData(
-                            symbol=sym, name=name, region=region,
-                            price=round(current_price, 2),
-                            change=round(change, 2),
-                            change_percent=round(change_pct, 2),
-                            sparkline=self._history[sym].copy(),
-                            updated_at=now,
-                        )
-                        result[region].append(idx)
-                        logger.info("全球(yf) %s: %.2f (%.2f%%)", name, current_price, change_pct)
-                    except Exception as e:
-                        logger.warning("解析全球指数 %s 失败: %s", sym, e)
+                try:
+                    name = GLOBAL_INDICES[sym]
+                    region = REGION_MAP.get(sym, "其他")
+                    
+                    # Ensure we have Close column
+                    if "Close" not in df.columns:
+                        logger.warning("yfinance %s 无Close列", sym)
+                        continue
+                    
+                    # Use Close column which is stable across calls
+                    closes = df["Close"].dropna()
+                    if len(closes) < 2:
+                        logger.warning("yfinance %s 数据不足: %d条", sym, len(closes))
+                        continue
+                    
+                    current_price = float(closes.iloc[-1])
+                    prev_price = float(closes.iloc[-2])
+                    
+                    if current_price <= 0 or prev_price <= 0:
+                        logger.warning("yfinance %s 价格无效: cur=%.2f, prev=%.2f", sym, current_price, prev_price)
+                        continue
+                    
+                    change = current_price - prev_price
+                    change_pct = (change / prev_price) * 100
+                    
+                    # Build sparkline from full history
+                    if sym not in self._history or len(self._history[sym]) < 5:
+                        self._history[sym] = [float(p) for p in closes.tolist()]
+                    
+                    self._history[sym].append(current_price)
+                    if len(self._history[sym]) > 20:
+                        self._history[sym] = self._history[sym][-20:]
+                    
+                    idx = IndexData(
+                        symbol=sym, name=name, region=region,
+                        price=round(current_price, 2),
+                        change=round(change, 2),
+                        change_percent=round(change_pct, 2),
+                        sparkline=self._history[sym].copy(),
+                        updated_at=now,
+                    )
+                    result[region].append(idx)
+                    logger.info("全球(yf) %s: %.2f (%.2f%%)", name, current_price, change_pct)
+                except Exception as e:
+                    logger.warning("解析全球指数 %s 失败: %s", sym, e)
             except Exception as e:
-                logger.warning("yfinance 批次 %s 失败: %s", batch, e)
-            if i + batch_size < len(symbols):
-                time.sleep(3)
+                logger.warning("yfinance 获取 %s 失败: %s", sym, e)
+            
+            # Add delay between requests to avoid rate limiting
+            time_module.sleep(2)
 
     def _fetch_global_sina(self, result: dict, now: datetime):
         """Fetch global indices from Sina API.
