@@ -49,7 +49,7 @@ REGION_MAP = {
 
 _SINA_GLOBAL_MAP = {
     "^DJI": "gb_dji", "^IXIC": "gb_ixic", "^GSPC": "gb_inx",
-    "^N225": "int_nikkei", "^FTSE": "int_ftse",
+    "^N225": "int_nikkei", "^KS11": "int_kospi", "^FTSE": "int_ftse",
     "^GDAXI": "int_gdaxi", "^FCHI": "int_fchi",
 }
 
@@ -362,82 +362,67 @@ class MarketDataService:
             logger.error("腾讯备用API也失败: %s", e)
 
     def _fetch_global_indices(self, result: dict, now: datetime):
-        """Fetch global indices with primary akshare, fallback yfinance/Sina.
+        """Fetch global indices with Sina as primary source.
         
-        Ensures sparkline and price come from same source to keep them consistent.
-        Prioritizes akshare for reliable Asian indices (JPY/KRW/GBX).
+        Sina is most reliable for Asian indices (JPY/KRW/GBX).
+        Strategy: Always try Sina first, fallback to akshare/yfinance for missing symbols.
         """
-        symbols = [s for s in GLOBAL_INDICES if s not in _SINA_COMMODITY_MAP]
-
-        # 1) Try akshare for global indices (best for Asia-Pacific)
+        # 1) Sina - most reliable for international indices (tested working)
         try:
-            import akshare as ak
-            df = ak.stock_global_index_daily()
-            if df is not None and not df.empty:
-                for _, row in df.iterrows():
-                    try:
-                        symbol_ak = row.get('symbol', '')
-                        # Map common akshare symbols to our keys
-                        symbol = None
-                        for our_sym, aka_name in [
-                            ('^GSPC', 'S&P 500'), ('^DJI', 'DJIA'), ('^IXIC', 'NASDAQ'),
-                            ('^N225', 'Nikkei 225'), ('^KS11', 'KOSPI'), ('^FTSE', 'FTSE 100'),
-                            ('^GDAXI', 'DAX'), ('^FCHI', 'CAC 40'),
-                        ]:
-                            if aka_name.lower() in str(symbol_ak).lower() or aka_name.lower() in str(row.get('名称', '')).lower():
-                                symbol = our_sym
-                                break
-                        if not symbol:
-                            continue
-                        
-                        name = GLOBAL_INDICES.get(symbol, str(row.get('名称', symbol)))
-                        region = REGION_MAP.get(symbol, "其他")
-                        price = float(row.get('价格', row.get('close', 0)))
-                        if price <= 0:
-                            continue
-                        prev = float(row.get('昨收', row.get('open', price)))
-                        change = price - prev
-                        change_pct = (change / prev * 100) if prev else 0
-                        
-                        self._history[symbol].append(price)
-                        if len(self._history[symbol]) > 20:
-                            self._history[symbol] = self._history[symbol][-20:]
-                        
-                        idx = IndexData(
-                            symbol=symbol, name=name, region=region,
-                            price=round(price, 2), change=round(change, 2),
-                            change_percent=round(change_pct, 2),
-                            sparkline=self._history[symbol].copy(),
-                            updated_at=now,
-                        )
-                        result[region].append(idx)
-                        logger.info("全球(AKShare) %s: %.2f (%.2f%%)", name, price, change_pct)
-                    except Exception as e:
-                        logger.debug("解析AKShare行 失败: %s", e)
+            self._fetch_global_sina(result, now)
         except Exception as e:
-            logger.warning("AKShare 全球指数不可用: %s", e)
+            logger.error("新浪全球指数失败: %s", e)
 
-        # Check populated
+        # 2) Check which symbols were populated
         existing_syms = {idx.symbol for indices in result.values() for idx in indices}
-        missing = [s for s in symbols if s not in existing_syms]
+        missing = [s for s in GLOBAL_INDICES if s not in _SINA_COMMODITY_MAP and s not in existing_syms]
 
-        # 2) Fallback to yfinance for missing
+        # 3) If missing, try akshare
+        if missing:
+            try:
+                import akshare as ak
+                df = ak.stock_global_index_daily()
+                if df is not None and not df.empty:
+                    for _, row in df.iterrows():
+                        try:
+                            for our_sym in missing:
+                                name = GLOBAL_INDICES.get(our_sym)
+                                # Simple name match
+                                if name and name.lower() in str(row).lower():
+                                    region = REGION_MAP.get(our_sym, "其他")
+                                    price = float(row.get('价格', row.get('close', 0)))
+                                    if price > 0:
+                                        prev = float(row.get('昨收', row.get('open', price)))
+                                        change = price - prev
+                                        change_pct = (change / prev * 100) if prev else 0
+                                        
+                                        # Fresh sparkline from single daily data point + synthetic
+                                        self._history[our_sym] = [price]
+                                        sparkline = self._generate_sparkline(price, change) if len(self._history[our_sym]) < 5 \
+                                            else self._history[our_sym]
+                                        
+                                        idx = IndexData(
+                                            symbol=our_sym, name=name, region=region,
+                                            price=round(price, 2), change=round(change, 2),
+                                            change_percent=round(change_pct, 2),
+                                            sparkline=sparkline,
+                                            updated_at=now,
+                                        )
+                                        result[region].append(idx)
+                                        logger.info("全球(AKShare) %s: %.2f (%.2f%%)", name, price, change_pct)
+                                        missing.remove(our_sym)
+                                        break
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.warning("AKShare 全球指数不可用: %s", e)
+
+        # 4) Fallback to yfinance for any remaining
         if missing:
             try:
                 self._fetch_global_yfinance(result, now, missing)
             except Exception as e:
                 logger.warning("yfinance 全球指数获取失败: %s", e)
-
-        # Recheck
-        existing_syms = {idx.symbol for indices in result.values() for idx in indices}
-        missing = [s for s in symbols if s not in existing_syms]
-
-        # 3) Final fallback to Sina
-        if missing:
-            try:
-                self._fetch_global_sina(result, now)
-            except Exception as e:
-                logger.warning("新浪全球指数补充失败: %s", e)
 
         # Ensure commodities
         existing_commodities = {idx.symbol for idx in result.get("大宗商品", [])}
@@ -516,54 +501,73 @@ class MarketDataService:
                 time.sleep(3)
 
     def _fetch_global_sina(self, result: dict, now: datetime):
+        """Fetch global indices from Sina API.
+        
+        This is the most reliable source for Asian indices (日经225、KOSPI、富时100).
+        Each call creates a fresh sparkline to avoid stale cache issues.
+        """
         try:
             import requests as req
+            # Get all mapped symbols from Sina
             codes = ",".join(_SINA_GLOBAL_MAP.values())
             url = f"https://hq.sinajs.cn/list={codes}"
             resp = req.get(url, headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
             resp.encoding = "gbk"
+            
             for line in resp.text.strip().split("\n"):
                 if '="' not in line:
                     continue
-                var_part, data_part = line.split('="', 1)
-                sina_code = var_part.rsplit("_", 1)[0].split("_")[-1] + "_" + var_part.rsplit("_", 1)[-1]
-                fields = data_part.rstrip('";').split(",")
-                if len(fields) < 4 or not fields[1]:
-                    continue
-                yf_sym = None
-                for yf_s, sina_s in _SINA_GLOBAL_MAP.items():
-                    if sina_s == sina_code:
-                        yf_sym = yf_s
-                        break
-                if not yf_sym:
-                    continue
-                name = GLOBAL_INDICES.get(yf_sym, fields[0])
-                region = REGION_MAP.get(yf_sym, "其他")
-                price = float(fields[1])
-                if sina_code.startswith("gb_"):
-                    change_pct = float(fields[2])
-                    change = float(fields[4]) if len(fields) > 4 and fields[4] else price * change_pct / 100
-                else:
-                    change = float(fields[2])
-                    change_pct = float(fields[3]) if fields[3] else 0
-
-                self._history[yf_sym].append(price)
-                if len(self._history[yf_sym]) > 20:
-                    self._history[yf_sym] = self._history[yf_sym][-20:]
-                sparkline = self._history[yf_sym].copy() if len(self._history[yf_sym]) >= 5 \
-                    else self._generate_sparkline(price, change)
-
-                idx = IndexData(
-                    symbol=yf_sym, name=name, region=region,
-                    price=round(price, 2), change=round(change, 2),
-                    change_percent=round(change_pct, 2),
-                    sparkline=sparkline,
-                    updated_at=now,
-                )
-                result[region].append(idx)
-                logger.info("全球(新浪) %s: %.2f (%.2f%%)", name, price, change_pct)
+                try:
+                    var_part, data_part = line.split('="', 1)
+                    sina_code = var_part.rsplit("_", 1)[0].split("_")[-1] + "_" + var_part.rsplit("_", 1)[-1]
+                    fields = data_part.rstrip('";').split(",")
+                    if len(fields) < 4 or not fields[1]:
+                        continue
+                    
+                    # Map sina_code back to our symbol
+                    yf_sym = None
+                    for yf_s, sina_s in _SINA_GLOBAL_MAP.items():
+                        if sina_s == sina_code:
+                            yf_sym = yf_s
+                            break
+                    if not yf_sym:
+                        continue
+                    
+                    name = GLOBAL_INDICES.get(yf_sym, fields[0])
+                    region = REGION_MAP.get(yf_sym, "其他")
+                    price = float(fields[1])
+                    
+                    if price <= 0:
+                        logger.warning("新浪 %s 价格无效: %.2f", name, price)
+                        continue
+                    
+                    # Parse change based on Sina format
+                    if sina_code.startswith("gb_"):
+                        # gb_dji, gb_inx: fields[2] is change_pct, fields[4] is change
+                        change_pct = float(fields[2])
+                        change = float(fields[4]) if len(fields) > 4 and fields[4] else price * change_pct / 100
+                    else:
+                        # int_nikkei, int_ftse: fields[2] is change, fields[3] is change_pct
+                        change = float(fields[2])
+                        change_pct = float(fields[3]) if fields[3] else 0
+                    
+                    # Create fresh sparkline (do NOT append to self._history, create new)
+                    # This avoids pollution from stale cache
+                    sparkline = self._generate_sparkline(price, change, points=20)
+                    
+                    idx = IndexData(
+                        symbol=yf_sym, name=name, region=region,
+                        price=round(price, 2), change=round(change, 2),
+                        change_percent=round(change_pct, 2),
+                        sparkline=sparkline,
+                        updated_at=now,
+                    )
+                    result[region].append(idx)
+                    logger.info("全球(新浪) %s: %.2f (%.2f%%)", name, price, change_pct)
+                except Exception as e:
+                    logger.debug("解析新浪一行失败: %s", e)
         except Exception as e:
-            logger.error("新浪全球指数也失败: %s", e)
+            logger.error("新浪全球指数获取失败: %s", e)
 
     _COMMODITY_UNITS = {
         "GC=F": ("美元/盎司", "元/克"),
@@ -768,12 +772,18 @@ class MarketDataService:
         }
 
     def _get_global_kline(self, symbol: str, period: str) -> dict:
+        """Get K-line for global indices (日经、KOSPI、富时等).
+        
+        Try TwelveData (if key available), then yfinance, handle all global indices.
+        """
         name = GLOBAL_INDICES.get(symbol, symbol)
         if self._td_api_key and symbol in _TWELVEDATA_MAP:
             try:
                 return self._get_global_kline_td(symbol, period, name)
             except Exception as e:
                 logger.warning("TwelveData K线失败 %s: %s, 尝试yfinance", symbol, e)
+        
+        # yfinance supports all yahoo finance symbols including ^N225, ^KS11, ^FTSE
         return self._get_global_kline_yf(symbol, period, name)
 
     def _get_global_kline_td(self, symbol: str, period: str, name: str) -> dict:
