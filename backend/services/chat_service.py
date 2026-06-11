@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_openai import ChatOpenAI
 
 from backend.config import Settings
-from backend.models.chat import ChatMessage, ChatResponse, QuickCommand
+from backend.models.chat import ChatMessage, QuickCommand
 
 logger = logging.getLogger(__name__)
 
@@ -63,25 +63,6 @@ class ChatService:
 
     def get_commands(self) -> list[QuickCommand]:
         return self.QUICK_COMMANDS
-
-    async def send_message(
-        self, message: str, history: list[ChatMessage]
-    ) -> ChatResponse:
-        messages = self._build_messages(message, history)
-        response = await self._llm.ainvoke(messages)
-        content = response.content if isinstance(response.content, str) else str(response.content)
-        self._history.append({"role": "user", "content": message})
-        self._history.append({"role": "assistant", "content": content})
-        usage = {}
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = {
-                "prompt_tokens": response.usage_metadata.get("input_tokens", 0),
-                "completion_tokens": response.usage_metadata.get("output_tokens", 0),
-            }
-        return ChatResponse(
-            message=ChatMessage(role="assistant", content=content),
-            usage=usage if usage else None,
-        )
 
     async def stream_message(
         self, message: str, history: list[ChatMessage]

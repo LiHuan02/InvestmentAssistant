@@ -8,22 +8,18 @@ class Settings(BaseSettings):
         env_file=".env",
         env_prefix="",
         case_sensitive=False,
+        extra="ignore",
     )
 
     host: str = "0.0.0.0"
     port: int = 8000
-    debug: bool = True
 
-    ai_provider: str = "openai"
     ai_api_key: str = ""
     ai_base_url: str = "https://api.openai.com/v1"
     ai_model: str = "gpt-4o-mini"
     ai_max_tokens: int = 2048
     ai_temperature: float = 0.7
 
-    itick_api: str = ""
-    alltick_api: str = ""
-    finnhub_api: str = ""
     twelvedata_api: str = ""
 
     market_refresh_interval: int = 60

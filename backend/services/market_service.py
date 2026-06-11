@@ -15,7 +15,7 @@ CN_INDICES = {
     "000001": "上证指数",
     "399001": "深证成指",
     "399006": "创业板指",
-    "000688": "科创50",
+    "000688": "科创指数",
 }
 
 HK_INDICES = {
@@ -45,12 +45,6 @@ REGION_MAP = {
     "^N225": "日股", "^KS11": "韩股",
     "^FTSE": "欧洲", "^GDAXI": "欧洲", "^FCHI": "欧洲",
     "GC=F": "大宗商品", "CL=F": "大宗商品", "SI=F": "大宗商品",
-}
-
-COMMODITY_UNITS = {
-    "GC=F": {"default": "美元/盎司", "alt": "元/克", "factor": 0.03215 * 7.25},
-    "CL=F": {"default": "美元/桶", "alt": "元/升", "factor": 7.25 / 158.987},
-    "SI=F": {"default": "美元/盎司", "alt": "元/克", "factor": 0.03215 * 7.25},
 }
 
 _SINA_GLOBAL_MAP = {
@@ -381,44 +375,6 @@ class MarketDataService:
                 logger.warning("yfinance 批次 %s 失败: %s", batch, e)
             if i + batch_size < len(symbols):
                 time.sleep(3)
-
-    def _fetch_global_twelvedata(self, result: dict, now: datetime):
-        import requests as req
-        for our_sym, td_sym in _TWELVEDATA_MAP.items():
-            try:
-                url = f"https://api.twelvedata.com/quote?symbol={td_sym}&apikey={self._td_api_key}"
-                resp = req.get(url, timeout=10)
-                data = resp.json()
-                if data.get("status") == "error":
-                    logger.warning("TwelveData %s 错误: %s", td_sym, data.get("message", ""))
-                    continue
-                close = float(data.get("close", 0))
-                prev_close = float(data.get("previous_close", 0))
-                change = float(data.get("change", 0))
-                change_pct = float(data.get("percent_change", 0))
-                if close == 0:
-                    continue
-
-                name = GLOBAL_INDICES.get(our_sym, td_sym)
-                region = REGION_MAP.get(our_sym, "其他")
-
-                self._history[our_sym].append(close)
-                if len(self._history[our_sym]) > 20:
-                    self._history[our_sym] = self._history[our_sym][-20:]
-                sparkline = self._history[our_sym].copy() if len(self._history[our_sym]) >= 5 \
-                    else self._generate_sparkline(close, change)
-
-                idx = IndexData(
-                    symbol=our_sym, name=name, region=region,
-                    price=round(close, 2), change=round(change, 2),
-                    change_percent=round(change_pct, 2),
-                    sparkline=sparkline, updated_at=now,
-                )
-                result[region].append(idx)
-                logger.info("全球(TD/%s) %s: %.2f (%.2f%%)", td_sym, name, close, change_pct)
-                time.sleep(0.5)
-            except Exception as e:
-                logger.warning("TwelveData %s 失败: %s", td_sym, e)
 
     def _fetch_global_sina(self, result: dict, now: datetime):
         try:

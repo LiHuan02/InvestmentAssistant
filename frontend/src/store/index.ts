@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { IndexData } from '../types/market';
 import type { NewsItem } from '../types/news';
 import type { ChatMessage } from '../types/chat';
 
@@ -27,18 +26,6 @@ export function useColor() {
     getColor: (change: number) => (change >= 0 ? (redUp ? '#cf1322' : '#3f8600') : (redUp ? '#3f8600' : '#cf1322')),
   };
 }
-
-interface MarketStore {
-  indices: IndexData[];
-  lastUpdated: Date | null;
-  setIndices: (data: IndexData[]) => void;
-}
-
-export const useMarketStore = create<MarketStore>((set) => ({
-  indices: [],
-  lastUpdated: null,
-  setIndices: (data) => set({ indices: data, lastUpdated: new Date() }),
-}));
 
 interface NewsStore {
   items: NewsItem[];

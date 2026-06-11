@@ -4,14 +4,6 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-export interface ChatResponse {
-  message: ChatMessage;
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-  };
-}
-
 export interface QuickCommand {
   id: string;
   label: string;

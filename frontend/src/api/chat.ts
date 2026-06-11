@@ -6,15 +6,6 @@ export async function fetchCommands(): Promise<QuickCommand[]> {
   return res.data;
 }
 
-export async function fetchHistory(): Promise<ChatMessage[]> {
-  const res = await apiClient.get('/chat/history');
-  return res.data;
-}
-
-export async function clearHistory(): Promise<void> {
-  await apiClient.delete('/chat/history');
-}
-
 export async function sendMessageStream(
   message: string,
   history: ChatMessage[],

@@ -2,13 +2,8 @@ import { Spin, Empty, List } from 'antd';
 import { useNews } from '../../hooks/useNews';
 import NewsCard from './NewsCard';
 
-interface NewsFeedProps {
-  limit?: number;
-}
-
-export default function NewsFeed({ limit }: NewsFeedProps) {
+export default function NewsFeed() {
   const { items, isLoading } = useNews();
-  const displayItems = limit ? items.slice(0, limit) : items;
 
   if (isLoading) {
     return (
@@ -18,13 +13,13 @@ export default function NewsFeed({ limit }: NewsFeedProps) {
     );
   }
 
-  if (displayItems.length === 0) {
+  if (items.length === 0) {
     return <Empty description="暂无资讯" />;
   }
 
   return (
     <List
-      dataSource={displayItems}
+      dataSource={items}
       renderItem={(item) => <NewsCard key={item.id} item={item} />}
     />
   );

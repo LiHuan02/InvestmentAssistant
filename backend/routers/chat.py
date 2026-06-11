@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from backend.models.chat import ChatMessage, ChatRequest, ChatResponse, QuickCommand
+from backend.models.chat import ChatRequest, QuickCommand
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -31,28 +31,6 @@ async def send_message(request_body: ChatRequest, request: Request):
             "X-Accel-Buffering": "no",
         },
     )
-
-
-@router.get("/message")
-async def send_message_get(
-    request: Request,
-    message: str,
-) -> ChatResponse:
-    service = request.app.state.chat_service
-    return await service.send_message(message, [])
-
-
-@router.get("/history")
-async def get_history(request: Request) -> list[dict]:
-    service = request.app.state.chat_service
-    return service.get_history()
-
-
-@router.delete("/history")
-async def clear_history(request: Request) -> dict:
-    service = request.app.state.chat_service
-    service.clear_history()
-    return {"status": "cleared"}
 
 
 @router.get("/commands")

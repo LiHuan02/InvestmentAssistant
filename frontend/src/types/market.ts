@@ -12,14 +12,6 @@ export interface IndexData {
   alt_unit?: string;
 }
 
-export interface MarketSummary {
-  overall_sentiment: 'bullish' | 'bearish' | 'mixed' | 'neutral';
-  top_gainer: IndexData | null;
-  top_loser: IndexData | null;
-  indices_by_region: Record<string, IndexData[]>;
-  updated_at: string;
-}
-
 export interface KlineData {
   dates: string[];
   opens: number[];
