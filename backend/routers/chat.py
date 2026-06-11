@@ -1,0 +1,61 @@
+import json
+
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
+
+from backend.models.chat import ChatMessage, ChatRequest, ChatResponse, QuickCommand
+
+router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+
+@router.post("/message")
+async def send_message(request_body: ChatRequest, request: Request):
+    service = request.app.state.chat_service
+
+    async def event_stream():
+        try:
+            async for token in service.stream_message(
+                request_body.message, request_body.history
+            ):
+                yield f"data: {json.dumps({'token': token})}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/message")
+async def send_message_get(
+    request: Request,
+    message: str,
+) -> ChatResponse:
+    service = request.app.state.chat_service
+    return await service.send_message(message, [])
+
+
+@router.get("/history")
+async def get_history(request: Request) -> list[dict]:
+    service = request.app.state.chat_service
+    return service.get_history()
+
+
+@router.delete("/history")
+async def clear_history(request: Request) -> dict:
+    service = request.app.state.chat_service
+    service.clear_history()
+    return {"status": "cleared"}
+
+
+@router.get("/commands")
+async def get_commands(request: Request) -> list[QuickCommand]:
+    service = request.app.state.chat_service
+    return service.get_commands()
