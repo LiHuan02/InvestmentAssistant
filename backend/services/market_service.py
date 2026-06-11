@@ -439,19 +439,35 @@ class MarketDataService:
         
         This prevents K-line vs sparkline inconsistencies caused by intraday data mismatches.
         Uses end-of-day data exclusively to match what's shown in K-line charts.
-        Requests one symbol at a time to avoid yfinance rate limiting.
+        Requests one symbol at a time with long delays to avoid yfinance rate limiting.
         """
         import yfinance as yf
         import time as time_module
         
-        for sym in symbols:
+        for idx, sym in enumerate(symbols):
             try:
-                # Get daily data (most recent 5 days to ensure we have yesterday)
-                # Request one at a time to avoid rate limiting
-                df = yf.download(
-                    tickers=sym, period="5d", interval="1d",
-                    progress=False, threads=False,
-                )
+                # Use exponential backoff for retries
+                max_retries = 3
+                retry_delay = 8  # Start with 8 seconds
+                
+                for attempt in range(max_retries):
+                    try:
+                        # Get daily data (most recent 5 days to ensure we have yesterday)
+                        df = yf.download(
+                            tickers=sym, period="5d", interval="1d",
+                            progress=False, threads=False,
+                        )
+                        if df is not None and not df.empty:
+                            break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            logger.warning("yfinance %s 获取失败 (尝试 %d/%d)，等待 %ds: %s", 
+                                         sym, attempt + 1, max_retries, retry_delay, str(e)[:50])
+                            time_module.sleep(retry_delay)
+                            retry_delay *= 1.5  # Exponential backoff
+                        else:
+                            raise
+                
                 if df is None or df.empty:
                     logger.warning("yfinance 无数据: %s", sym)
                     continue
@@ -489,7 +505,7 @@ class MarketDataService:
                     if len(self._history[sym]) > 20:
                         self._history[sym] = self._history[sym][-20:]
                     
-                    idx = IndexData(
+                    idx_data = IndexData(
                         symbol=sym, name=name, region=region,
                         price=round(current_price, 2),
                         change=round(change, 2),
@@ -497,15 +513,19 @@ class MarketDataService:
                         sparkline=self._history[sym].copy(),
                         updated_at=now,
                     )
-                    result[region].append(idx)
+                    result[region].append(idx_data)
                     logger.info("全球(yf) %s: %.2f (%.2f%%)", name, current_price, change_pct)
                 except Exception as e:
                     logger.warning("解析全球指数 %s 失败: %s", sym, e)
             except Exception as e:
                 logger.warning("yfinance 获取 %s 失败: %s", sym, e)
             
-            # Add delay between requests to avoid rate limiting
-            time_module.sleep(2)
+            # Add significant delay between requests to avoid rate limiting
+            # Longer delay for later requests
+            if idx < len(symbols) - 1:
+                delay = 10 + idx * 3  # 10s, 13s, 16s...
+                logger.debug("yfinance 请求延迟 %ds...", delay)
+                time_module.sleep(delay)
 
     def _fetch_global_sina(self, result: dict, now: datetime):
         """Fetch global indices from Sina API.
