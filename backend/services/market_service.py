@@ -538,10 +538,14 @@ class MarketDataService:
             # Get all mapped symbols from Sina
             codes = ",".join(_SINA_GLOBAL_MAP.values())
             url = f"https://hq.sinajs.cn/list={codes}"
+            logger.debug("请求 Sina: %s", url)
             resp = req.get(url, headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
             resp.encoding = "gbk"
             
-            for line in resp.text.strip().split("\n"):
+            lines = resp.text.strip().split("\n")
+            logger.debug("Sina 返回 %d 行", len(lines))
+            
+            for line in lines:
                 if '="' not in line:
                     continue
                 try:
@@ -549,6 +553,7 @@ class MarketDataService:
                     sina_code = var_part.rsplit("_", 1)[0].split("_")[-1] + "_" + var_part.rsplit("_", 1)[-1]
                     fields = data_part.rstrip('";').split(",")
                     if len(fields) < 4 or not fields[1]:
+                        logger.debug("跳过: %s (字段不足或价格为空)", sina_code)
                         continue
                     
                     # Map sina_code back to our symbol
@@ -558,6 +563,7 @@ class MarketDataService:
                             yf_sym = yf_s
                             break
                     if not yf_sym:
+                        logger.debug("未识别的Sina代码: %s", sina_code)
                         continue
                     
                     name = GLOBAL_INDICES.get(yf_sym, fields[0])
