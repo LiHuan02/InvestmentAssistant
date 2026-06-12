@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
 
     market_service = MarketDataService(settings)
     news_service = NewsService()
-    chat_service = ChatService(settings)
+    chat_service = ChatService(settings, market_service, news_service)
 
     app.state.market_service = market_service
     app.state.news_service = news_service

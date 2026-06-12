@@ -1,5 +1,3 @@
-import json
-
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
@@ -14,13 +12,13 @@ async def send_message(request_body: ChatRequest, request: Request):
 
     async def event_stream():
         try:
-            async for token in service.stream_message(
+            async for event_json in service.stream_message(
                 request_body.message, request_body.history
             ):
-                yield f"data: {json.dumps({'token': token})}\n\n"
+                yield f"data: {event_json}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield f'data: {{"error": "{str(e)}"}}\n\n'
 
     return StreamingResponse(
         event_stream(),

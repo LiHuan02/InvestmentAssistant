@@ -19,6 +19,7 @@ export function useChat() {
         role: 'assistant',
         content: '',
         timestamp: new Date().toISOString(),
+        toolCalls: [],
       };
       store.addMessage(assistantMsg);
       store.setStreaming(true);
@@ -29,16 +30,16 @@ export function useChat() {
         timestamp: m.timestamp,
       }));
 
-      await sendMessageStream(
-        content,
-        history,
-        (token) => store.appendToLastAssistant(token),
-        () => store.setStreaming(false),
-        (error) => {
-          store.appendToLastAssistant(`\n\nError: ${error}`);
+      await sendMessageStream(content, history, {
+        onToken: (token) => store.appendToLastAssistant(token),
+        onToolStart: (name, input) => store.addToolCall(name, input),
+        onToolEnd: (name, output) => store.updateToolCall(name, output),
+        onDone: () => store.setStreaming(false),
+        onError: (error) => {
+          store.appendToLastAssistant(`\n\n**错误**: ${error}`);
           store.setStreaming(false);
-        }
-      );
+        },
+      });
     },
     [store]
   );

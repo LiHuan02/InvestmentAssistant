@@ -46,6 +46,8 @@ interface ChatStore {
   isStreaming: boolean;
   addMessage: (msg: ChatMessage) => void;
   appendToLastAssistant: (token: string) => void;
+  addToolCall: (name: string, input: string) => void;
+  updateToolCall: (name: string, output: string) => void;
   setStreaming: (streaming: boolean) => void;
   clearMessages: () => void;
 }
@@ -60,6 +62,30 @@ export const useChatStore = create<ChatStore>((set) => ({
       const last = messages[messages.length - 1];
       if (last && last.role === 'assistant') {
         messages[messages.length - 1] = { ...last, content: last.content + token };
+      }
+      return { messages };
+    }),
+  addToolCall: (name, input) =>
+    set((state) => {
+      const messages = [...state.messages];
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'assistant') {
+        const toolCalls = [...(last.toolCalls || []), { name, input, status: 'running' as const }];
+        messages[messages.length - 1] = { ...last, toolCalls };
+      }
+      return { messages };
+    }),
+  updateToolCall: (name, output) =>
+    set((state) => {
+      const messages = [...state.messages];
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'assistant' && last.toolCalls) {
+        const toolCalls = last.toolCalls.map((tc) =>
+          tc.name === name && tc.status === 'running'
+            ? { ...tc, output, status: 'done' as const }
+            : tc
+        );
+        messages[messages.length - 1] = { ...last, toolCalls };
       }
       return { messages };
     }),

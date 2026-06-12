@@ -1,17 +1,23 @@
 import apiClient from './client';
-import type { ChatMessage, QuickCommand } from '../types/chat';
+import type { ChatMessage, QuickCommand, ToolCall } from '../types/chat';
 
 export async function fetchCommands(): Promise<QuickCommand[]> {
   const res = await apiClient.get('/chat/commands');
   return res.data;
 }
 
+interface StreamCallbacks {
+  onToken: (token: string) => void;
+  onToolStart: (name: string, input: string) => void;
+  onToolEnd: (name: string, output: string) => void;
+  onDone: () => void;
+  onError: (error: string) => void;
+}
+
 export async function sendMessageStream(
   message: string,
   history: ChatMessage[],
-  onToken: (token: string) => void,
-  onDone: () => void,
-  onError: (error: string) => void
+  callbacks: StreamCallbacks
 ): Promise<void> {
   const response = await fetch('/api/v1/chat/message', {
     method: 'POST',
@@ -20,13 +26,13 @@ export async function sendMessageStream(
   });
 
   if (!response.ok) {
-    onError(`HTTP ${response.status}: ${response.statusText}`);
+    callbacks.onError(`HTTP ${response.status}: ${response.statusText}`);
     return;
   }
 
   const reader = response.body?.getReader();
   if (!reader) {
-    onError('No response body');
+    callbacks.onError('No response body');
     return;
   }
 
@@ -42,26 +48,28 @@ export async function sendMessageStream(
     buffer = lines.pop() || '';
 
     for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6).trim();
-        if (data === '[DONE]') {
-          onDone();
+      if (!line.startsWith('data: ')) continue;
+      const raw = line.slice(6).trim();
+      if (raw === '[DONE]') {
+        callbacks.onDone();
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed.token) {
+          callbacks.onToken(parsed.token);
+        } else if (parsed.tool_start) {
+          callbacks.onToolStart(parsed.tool_start.name, parsed.tool_start.input);
+        } else if (parsed.tool_end) {
+          callbacks.onToolEnd(parsed.tool_end.name, parsed.tool_end.output);
+        } else if (parsed.error) {
+          callbacks.onError(parsed.error);
           return;
         }
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.error) {
-            onError(parsed.error);
-            return;
-          }
-          if (parsed.token) {
-            onToken(parsed.token);
-          }
-        } catch {
-          // skip malformed chunks
-        }
+      } catch {
+        // skip malformed
       }
     }
   }
-  onDone();
+  callbacks.onDone();
 }

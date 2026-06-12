@@ -1,0 +1,23 @@
+# MCP 服务器配置
+# 取消注释并填写配置即可启用对应的 MCP 服务器
+# Agent 启动时会自动加载此处配置的工具
+
+mcp_servers: {}
+  # Alpha Vantage (远程 MCP，需 API Key)
+  # alpha_vantage:
+  #   transport: streamable_http
+  #   url: "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
+
+  # Financial Datasets (本地 STDIO)
+  # financial_datasets:
+  #   command: python
+  #   args: ["path/to/financial_datasets_server.py"]
+  #   transport: stdio
+  #   env:
+  #     FINANCIAL_DATASETS_API_KEY: "YOUR_KEY"
+
+  # Trading MCP (股票筛选 + 情绪分析)
+  # trading:
+  #   command: python
+  #   args: ["path/to/trading_mcp/server.py"]
+  #   transport: stdio

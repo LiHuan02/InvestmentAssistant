@@ -1,6 +1,8 @@
 from functools import lru_cache
+from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
 
 class Settings(BaseSettings):
@@ -21,11 +23,23 @@ class Settings(BaseSettings):
     ai_temperature: float = 0.7
 
     twelvedata_api: str = ""
+    tavily_api_key: str = ""
 
     market_refresh_interval: int = 60
     news_refresh_interval: int = 300
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: Any,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
+        file_secret_settings: Any,
+    ) -> tuple:
+        return (init_settings, dotenv_settings, env_settings, file_secret_settings)
 
 
 @lru_cache
