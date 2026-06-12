@@ -15,7 +15,7 @@ CN_INDICES = {
     "000001": "上证指数",
     "399001": "深证成指",
     "399006": "创业板指",
-    "000688": "科创指数",
+    "000680": "科创综指",
 }
 
 HK_INDICES = {
@@ -25,58 +25,87 @@ HK_INDICES = {
 }
 
 GLOBAL_INDICES = {
-    "^GSPC": "标普500",
-    "^IXIC": "纳斯达克",
-    "^DJI": "道琼斯",
-    "^N225": "日经225",
-    "^KS11": "KOSPI",
-    "^FTSE": "富时100",
-    "^GDAXI": "德国DAX",
-    "^FCHI": "法国CAC40",
-    "GC=F": "黄金",
-    "CL=F": "原油WTI",
-    "SI=F": "白银",
-}
-
-REGION_MAP = {
-    "000001": "A股", "399001": "A股", "399006": "A股", "000688": "A股",
-    "HSI": "港股", "HSCEI": "港股", "HSTECH": "港股",
-    "^GSPC": "美股", "^IXIC": "美股", "^DJI": "美股",
-    "^N225": "日股", "^KS11": "韩股",
-    "^FTSE": "欧洲", "^GDAXI": "欧洲", "^FCHI": "欧洲",
-    "GC=F": "大宗商品", "CL=F": "大宗商品", "SI=F": "大宗商品",
+    "^DJI": {"name": "道琼斯", "region": "美股"},
+    "^IXIC": {"name": "纳斯达克", "region": "美股"},
+    "^GSPC": {"name": "标普500", "region": "美股"},
+    "^N225": {"name": "日经225", "region": "日股"},
+    "^KS11": {"name": "KOSPI", "region": "韩股"},
+    "^FTSE": {"name": "富时100", "region": "欧洲"},
 }
 
 _SINA_GLOBAL_MAP = {
-    "^DJI": "gb_dji", "^IXIC": "gb_ixic", "^GSPC": "gb_inx",
-    "^N225": "int_nikkei", "^FTSE": "int_ftse",
-    "^GDAXI": "int_gdaxi", "^FCHI": "int_fchi",
-    # Note: KOSPI (^KS11) not available from Sina, will be fetched via yfinance
+    "^DJI": "gb_dji",
+    "^IXIC": "gb_ixic",
+    "^GSPC": "gb_inx",
 }
 
 _SINA_COMMODITY_MAP = {
-    "GC=F": "hf_GC",
-    "CL=F": "hf_CL",
-    "SI=F": "hf_SI",
+    "GC=F": ("黄金", "美元/盎司", "元/克"),
+    "CL=F": ("原油WTI", "美元/桶", ""),
+    "SI=F": ("白银", "美元/盎司", "元/克"),
 }
 
-_TWELVEDATA_MAP = {
-    "^GSPC": "SPY",
-    "^IXIC": "QQQ",
-    "^DJI": "DIA",
-    "GC=F": "GLD",
-    "CL=F": "USO",
+_AKSHARE_EM_NAMES = {
+    "^N225": "日经225",
+    "^KS11": "韩国KOSPI",
 }
 
 _kline_cache: dict[str, tuple[float, dict]] = {}
 KLINE_CACHE_TTL = 300
+
+_MARKET_HOURS_UTC = {
+    "A股": (1, 30, 7, 0),
+    "港股": (1, 30, 8, 0),
+    "美股": (13, 30, 20, 0),
+    "日股": (23, 30, 5, 0),
+    "韩股": (23, 30, 5, 0),
+    "欧洲": (7, 0, 15, 30),
+    "大宗商品": (0, 0, 23, 59),
+}
+
+
+def _is_market_open(region: str, now_utc: datetime | None = None) -> bool:
+    if now_utc is None:
+        now_utc = datetime.utcnow()
+    if now_utc.weekday() >= 5:
+        return region == "大宗商品"
+    hours = _MARKET_HOURS_UTC.get(region)
+    if not hours:
+        return False
+    start_m = hours[0] * 60 + hours[1]
+    end_m = hours[2] * 60 + hours[3]
+    cur_m = now_utc.hour * 60 + now_utc.minute
+    if start_m <= end_m:
+        return start_m <= cur_m <= end_m
+    return cur_m >= start_m or cur_m <= end_m
+
+
+def _any_market_open(now_utc: datetime | None = None) -> bool:
+    return any(_is_market_open(r, now_utc) for r in _MARKET_HOURS_UTC)
 
 
 class MarketDataService:
     def __init__(self, settings=None):
         self._cache: dict[str, IndexData] = {}
         self._history: dict[str, list[float]] = defaultdict(list)
-        self._td_api_key = getattr(settings, "twelvedata_api", "") if settings else ""
+        self._settings = settings
+
+    def get_cached(self) -> dict[str, list[IndexData]]:
+        grouped: dict[str, list[IndexData]] = defaultdict(list)
+        for data in self._cache.values():
+            grouped[data.region].append(data)
+        return dict(grouped)
+
+    def get_index(self, symbol: str) -> IndexData | None:
+        return self._cache.get(symbol)
+
+    def get_market_status(self) -> dict:
+        now = datetime.utcnow()
+        return {
+            "utc_time": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "any_open": _any_market_open(now),
+            "markets": {r: _is_market_open(r, now) for r in _MARKET_HOURS_UTC},
+        }
 
     @staticmethod
     def _generate_sparkline(price: float, change: float, points: int = 20) -> list[float]:
@@ -93,60 +122,7 @@ class MarketDataService:
         result[-1] = price
         return result
 
-    _MARKET_HOURS_UTC = {
-        "A股": (1, 30, 7, 0),
-        "港股": (1, 30, 8, 0),
-        "美股": (13, 30, 20, 0),
-        "日股": (23, 30, 5, 0),
-        "韩股": (23, 30, 5, 0),
-        "欧洲": (7, 0, 15, 30),
-        "大宗商品": (0, 0, 23, 59),
-    }
-
-    @staticmethod
-    def _is_market_open(region: str, now_utc: datetime | None = None) -> bool:
-        """Check if market is currently open (UTC time, accounting for day boundary crossing)."""
-        if now_utc is None:
-            now_utc = datetime.utcnow()
-        
-        # Weekends closed (except commodities)
-        weekday = now_utc.weekday()
-        if weekday >= 5:
-            return region == "大宗商品"
-        
-        hours = MarketDataService._MARKET_HOURS_UTC.get(region)
-        if not hours:
-            return False
-        
-        start_h, start_m, end_h, end_m = hours
-        current_minutes = now_utc.hour * 60 + now_utc.minute
-        start_minutes = start_h * 60 + start_m
-        end_minutes = end_h * 60 + end_m
-        
-        # Market spans across day boundary (e.g., 23:30 UTC to 05:00 UTC next day)
-        if start_minutes > end_minutes:
-            return current_minutes >= start_minutes or current_minutes <= end_minutes
-        
-        # Market within same day
-        return start_minutes <= current_minutes <= end_minutes
-
-    @staticmethod
-    def _any_market_open(now_utc: datetime | None = None) -> bool:
-        return any(
-            MarketDataService._is_market_open(region, now_utc)
-            for region in MarketDataService._MARKET_HOURS_UTC
-        )
-
-    def get_market_status(self) -> dict:
-        now = datetime.utcnow()
-        return {
-            "utc_time": now.strftime("%Y-%m-%d %H:%M:%S"),
-            "any_open": self._any_market_open(now),
-            "markets": {
-                region: self._is_market_open(region, now)
-                for region in self._MARKET_HOURS_UTC
-            },
-        }
+    # ── Main refresh ──────────────────────────────────────────────
 
     async def refresh_all(self) -> dict[str, list[IndexData]]:
         try:
@@ -159,102 +135,41 @@ class MarketDataService:
             logger.error("刷新市场数据失败: %s", e)
             return self.get_cached()
 
-    def get_cached(self) -> dict[str, list[IndexData]]:
-        grouped: dict[str, list[IndexData]] = defaultdict(list)
-        for data in self._cache.values():
-            grouped[data.region].append(data)
-        return dict(grouped)
-
-    def get_index(self, symbol: str) -> IndexData | None:
-        return self._cache.get(symbol)
-
     def _fetch_all_sync(self) -> dict[str, list[IndexData]]:
         result: dict[str, list[IndexData]] = defaultdict(list)
         now = datetime.utcnow()
 
-        self._fetch_cn_indices(result, now)
-        time.sleep(1)
-        self._fetch_hk_indices(result, now)
-        time.sleep(1)
-        self._fetch_global_indices(result, now)
+        self._fetch_cn(result, now)
+        time.sleep(0.5)
+        self._fetch_hk(result, now)
+        time.sleep(0.5)
+        self._fetch_global_sina(result, now)
+        time.sleep(0.5)
+        self._fetch_global_akshare(result, now)
+        time.sleep(0.5)
+        self._fetch_commodities(result, now)
 
-        for region, indices in result.items():
+        for indices in result.values():
             for idx in indices:
                 self._cache[idx.symbol] = idx
-
         return dict(result)
 
-    def _seed_sparkline_sina(self, symbol: str, prefix: str) -> list[float]:
+    # ── A股 (新浪实时 + K线缩略图) ────────────────────────────────
+
+    def _fetch_cn(self, result: dict, now: datetime):
+        import requests as req
+        prefix_map = {c: ("sh" if c.startswith("0000") or c.startswith("0006") else "sz") for c in CN_INDICES}
+        codes = ",".join(f"{prefix_map[c]}{c}" for c in CN_INDICES)
         try:
-            import requests as req
-            sina_sym = f"{prefix}{symbol}"
-            url = (
-                f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
-                f"CN_MarketData.getKLineData?symbol={sina_sym}&scale=5&ma=no&datalen=20"
-            )
-            resp = req.get(url, headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
-            data = resp.json()
-            if data:
-                return [float(d["close"]) for d in data[-20:]]
-        except Exception:
-            pass
-        return []
-
-    def _fetch_cn_indices(self, result: dict, now: datetime):
-        self._fetch_cn_sina(result, now)
-
-        if len(result.get("A股", [])) < len(CN_INDICES):
-            try:
-                import akshare as ak
-                df = ak.stock_zh_index_spot_em()
-                existing = {idx.symbol for idx in result.get("A股", [])}
-                for code, name in CN_INDICES.items():
-                    if code in existing:
-                        continue
-                    try:
-                        row = df[df["代码"] == code]
-                        if row.empty:
-                            continue
-                        row = row.iloc[0]
-                        price = float(row["最新价"])
-                        change = float(row.get("涨跌额", 0))
-                        change_pct = float(row.get("涨跌幅", 0))
-                        if code not in self._history or len(self._history[code]) < 5:
-                            seed = self._seed_sparkline_sina(code, "sh" if code.startswith("0000") or code.startswith("0006") else "sz")
-                            if seed:
-                                self._history[code] = seed
-                        self._history[code].append(price)
-                        if len(self._history[code]) > 20:
-                            self._history[code] = self._history[code][-20:]
-                        idx = IndexData(
-                            symbol=code, name=name, region="A股",
-                            price=round(price, 2), change=round(change, 2),
-                            change_percent=round(change_pct, 2),
-                            sparkline=self._history[code].copy(),
-                            updated_at=now,
-                        )
-                        result["A股"].append(idx)
-                        logger.info("A股(AK补充) %s: %.2f (%.2f%%)", name, price, change_pct)
-                    except Exception as e:
-                        logger.warning("AKShare补充A股 %s 失败: %s", code, e)
-            except Exception as e:
-                logger.warning("AKShare A股补充不可用: %s", e)
-
-    def _fetch_cn_sina(self, result: dict, now: datetime):
-        try:
-            import requests as req
-            codes = ",".join(f"sh{c}" if c.startswith("0000") or c.startswith("0006")
-                             else f"sz{c}" for c in CN_INDICES)
-            url = f"https://hq.sinajs.cn/list={codes}"
-            resp = req.get(url, headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
+            resp = req.get(f"https://hq.sinajs.cn/list={codes}",
+                           headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
             resp.encoding = "gbk"
             for line in resp.text.strip().split("\n"):
                 if '="' not in line:
                     continue
-                var_part, data_part = line.split('="', 1)
-                code_raw = var_part.split("_")[-1]
-                code = code_raw[2:]
-                fields = data_part.rstrip('";').split(",")
+                raw_code = line.split("hq_str_")[1].split("=")[0]
+                code = raw_code[2:]
+                fields = line.split('="', 1)[1].rstrip('";').split(",")
                 if len(fields) < 4:
                     continue
                 name = CN_INDICES.get(code, fields[0])
@@ -263,79 +178,51 @@ class MarketDataService:
                 change = price - prev_close
                 change_pct = (change / prev_close * 100) if prev_close else 0
 
-                if code not in self._history or len(self._history[code]) < 5:
-                    prefix = "sh" if code.startswith("0000") or code.startswith("0006") else "sz"
-                    seed = self._seed_sparkline_sina(code, prefix)
-                    if seed:
-                        self._history[code] = seed
+                sparkline = self._get_cn_sparkline(code, prefix_map[code])
+                if not sparkline:
+                    self._history[code].append(price)
+                    sparkline = self._history[code][-20:] if len(self._history[code]) >= 5 \
+                        else self._generate_sparkline(price, change)
 
-                self._history[code].append(price)
-                if len(self._history[code]) > 20:
-                    self._history[code] = self._history[code][-20:]
-                idx = IndexData(
+                result["A股"].append(IndexData(
                     symbol=code, name=name, region="A股",
                     price=round(price, 2), change=round(change, 2),
                     change_percent=round(change_pct, 2),
-                    sparkline=self._history[code].copy(),
-                    updated_at=now,
-                )
-                result["A股"].append(idx)
-                logger.info("A股(新浪) %s: %.2f", name, price)
+                    sparkline=sparkline, updated_at=now,
+                ))
+                logger.info("A股 %s: %.2f (%.2f%%)", name, price, change_pct)
         except Exception as e:
-            logger.error("新浪备用API也失败: %s", e)
+            logger.error("A股获取失败: %s", e)
 
-    def _fetch_hk_indices(self, result: dict, now: datetime):
-        try:
-            import akshare as ak
-            df = ak.stock_hk_index_spot_em()
-            for code, name in HK_INDICES.items():
-                try:
-                    row = df[df["代码"] == code]
-                    if row.empty:
-                        row = df[df["名称"].str.contains(name[:2], na=False)]
-                    if row.empty:
-                        continue
-                    row = row.iloc[0]
-                    price = float(row["最新价"])
-                    change = float(row.get("涨跌额", 0))
-                    change_pct = float(row.get("涨跌幅", 0))
-
-                    self._history[code].append(price)
-                    if len(self._history[code]) > 20:
-                        self._history[code] = self._history[code][-20:]
-                    sparkline = self._history[code].copy() if len(self._history[code]) >= 5 \
-                        else self._generate_sparkline(price, change)
-
-                    idx = IndexData(
-                        symbol=code, name=name, region="港股",
-                        price=round(price, 2), change=round(change, 2),
-                        change_percent=round(change_pct, 2),
-                        sparkline=sparkline,
-                        updated_at=now,
-                    )
-                    result["港股"].append(idx)
-                    logger.info("港股 %s: %.2f (%.2f%%)", name, price, change_pct)
-                except Exception as e:
-                    logger.warning("解析港股指数 %s 失败: %s", code, e)
-        except Exception as e:
-            logger.warning("AKShare 获取港股指数失败: %s, 尝试腾讯备用", e)
-            self._fetch_hk_tencent(result, now)
-
-    def _fetch_hk_tencent(self, result: dict, now: datetime):
+    def _get_cn_sparkline(self, code: str, prefix: str) -> list[float]:
         try:
             import requests as req
-            codes = ",".join(f"hk{code}" for code in HK_INDICES)
-            url = f"https://qt.gtimg.cn/q={codes}"
-            resp = req.get(url, timeout=10)
+            url = (f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+                   f"CN_MarketData.getKLineData?symbol={prefix}{code}&scale=5&ma=no&datalen=20")
+            resp = req.get(url, headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
+            data = resp.json()
+            if data:
+                return [float(d["close"]) for d in data[-20:]]
+        except Exception:
+            pass
+        return []
+
+    # ── 港股 (腾讯) ──────────────────────────────────────────────
+
+    def _fetch_hk(self, result: dict, now: datetime):
+        import requests as req
+        codes = ",".join(f"hk{c}" for c in HK_INDICES)
+        try:
+            resp = req.get(f"https://qt.gtimg.cn/q={codes}", timeout=10)
             data = resp.content.decode("gbk")
             code_list = list(HK_INDICES.keys())
             for i, line in enumerate(data.strip().split(";")):
                 if '="' not in line:
                     continue
-                fields_match = line.split('"')
-                if len(fields_match) < 2:
+                parts = line.split('"')
+                if len(parts) < 2:
                     continue
-                fields = fields_match[1].split("~")
+                fields = parts[1].split("~")
                 if len(fields) < 45:
                     continue
                 code = code_list[i] if i < len(code_list) else ""
@@ -345,268 +232,186 @@ class MarketDataService:
                 change_pct = float(fields[32]) if len(fields) > 32 else 0
 
                 self._history[code].append(price)
-                if len(self._history[code]) > 20:
-                    self._history[code] = self._history[code][-20:]
-                sparkline = self._history[code].copy() if len(self._history[code]) >= 5 \
+                sparkline = self._history[code][-20:] if len(self._history[code]) >= 5 \
                     else self._generate_sparkline(price, change)
 
-                idx = IndexData(
+                result["港股"].append(IndexData(
                     symbol=code, name=name, region="港股",
                     price=round(price, 2), change=round(change, 2),
                     change_percent=round(change_pct, 2),
-                    sparkline=sparkline,
-                    updated_at=now,
-                )
-                result["港股"].append(idx)
-                logger.info("港股(腾讯) %s: %.2f", name, price)
+                    sparkline=sparkline, updated_at=now,
+                ))
+                logger.info("港股 %s: %.2f (%.2f%%)", name, price, change_pct)
         except Exception as e:
-            logger.error("腾讯备用API也失败: %s", e)
+            logger.error("港股获取失败: %s", e)
 
-    def _fetch_global_indices(self, result: dict, now: datetime):
-        """Fetch global indices with Sina as primary source.
-        
-        Sina is most reliable for Asian indices (JPY/GBX).
-        Strategy: Try Sina first, then yfinance for missing (especially KOSPI/DAX/CAC),
-        akshare as final fallback.
-        """
-        # 1) Sina - most reliable for international indices (tested working)
-        try:
-            self._fetch_global_sina(result, now)
-        except Exception as e:
-            logger.error("新浪全球指数失败: %s", e)
-
-        # 2) Check which symbols were populated
-        existing_syms = {idx.symbol for indices in result.values() for idx in indices}
-        missing = [s for s in GLOBAL_INDICES if s not in _SINA_COMMODITY_MAP and s not in existing_syms]
-
-        # 3) yfinance for missing (especially KOSPI/DAX/CAC which Sina doesn't have)
-        if missing:
-            logger.info("尝试 yfinance 获取缺失指数: %s", missing)
-            try:
-                self._fetch_global_yfinance(result, now, missing)
-            except Exception as e:
-                logger.warning("yfinance 全球指数获取失败: %s", e)
-
-        # 4) akshare as final fallback (if method available)
-        existing_syms = {idx.symbol for indices in result.values() for idx in indices}
-        missing = [s for s in GLOBAL_INDICES if s not in _SINA_COMMODITY_MAP and s not in existing_syms]
-        if missing:
-            try:
-                import akshare as ak
-                # Check if method exists before calling
-                if hasattr(ak, 'stock_global_index_daily'):
-                    df = ak.stock_global_index_daily()
-                    if df is not None and not df.empty:
-                        for _, row in df.iterrows():
-                            try:
-                                for our_sym in missing[:]:
-                                    name = GLOBAL_INDICES.get(our_sym)
-                                    # Simple name match
-                                    if name and name.lower() in str(row).lower():
-                                        region = REGION_MAP.get(our_sym, "其他")
-                                        price = float(row.get('价格', row.get('close', 0)))
-                                        if price > 0:
-                                            prev = float(row.get('昨收', row.get('open', price)))
-                                            change = price - prev
-                                            change_pct = (change / prev * 100) if prev else 0
-                                            
-                                            sparkline = self._generate_sparkline(price, change)
-                                            
-                                            idx = IndexData(
-                                                symbol=our_sym, name=name, region=region,
-                                                price=round(price, 2), change=round(change, 2),
-                                                change_percent=round(change_pct, 2),
-                                                sparkline=sparkline,
-                                                updated_at=now,
-                                            )
-                                            result[region].append(idx)
-                                            logger.info("全球(AKShare) %s: %.2f (%.2f%%)", name, price, change_pct)
-                                            missing.remove(our_sym)
-                                            break
-                            except Exception:
-                                pass
-            except Exception as e:
-                logger.debug("AKShare 全球指数不可用: %s", e)
-
-        # Ensure commodities
-        existing_commodities = {idx.symbol for idx in result.get("大宗商品", [])}
-        missing_commodities = set(_SINA_COMMODITY_MAP.keys()) - existing_commodities
-        if missing_commodities or not result.get("大宗商品"):
-            self._fetch_commodities_sina(result, now)
-
-    def _fetch_global_yfinance(self, result: dict, now: datetime, symbols: list[str]):
-        """Fetch daily close only for current day vs previous close to ensure data consistency.
-        
-        This prevents K-line vs sparkline inconsistencies caused by intraday data mismatches.
-        Uses end-of-day data exclusively to match what's shown in K-line charts.
-        Requests one symbol at a time with long delays to avoid yfinance rate limiting.
-        """
-        import yfinance as yf
-        import time as time_module
-        
-        for idx, sym in enumerate(symbols):
-            try:
-                # Use exponential backoff for retries
-                max_retries = 3
-                retry_delay = 8  # Start with 8 seconds
-                
-                for attempt in range(max_retries):
-                    try:
-                        # Get daily data (most recent 5 days to ensure we have yesterday)
-                        df = yf.download(
-                            tickers=sym, period="5d", interval="1d",
-                            progress=False, threads=False,
-                        )
-                        if df is not None and not df.empty:
-                            break
-                    except Exception as e:
-                        if attempt < max_retries - 1:
-                            logger.warning("yfinance %s 获取失败 (尝试 %d/%d)，等待 %ds: %s", 
-                                         sym, attempt + 1, max_retries, retry_delay, str(e)[:50])
-                            time_module.sleep(retry_delay)
-                            retry_delay *= 1.5  # Exponential backoff
-                        else:
-                            raise
-                
-                if df is None or df.empty:
-                    logger.warning("yfinance 无数据: %s", sym)
-                    continue
-                    
-                try:
-                    name = GLOBAL_INDICES[sym]
-                    region = REGION_MAP.get(sym, "其他")
-                    
-                    # Ensure we have Close column
-                    if "Close" not in df.columns:
-                        logger.warning("yfinance %s 无Close列", sym)
-                        continue
-                    
-                    # Use Close column which is stable across calls
-                    closes = df["Close"].dropna()
-                    if len(closes) < 2:
-                        logger.warning("yfinance %s 数据不足: %d条", sym, len(closes))
-                        continue
-                    
-                    current_price = float(closes.iloc[-1])
-                    prev_price = float(closes.iloc[-2])
-                    
-                    if current_price <= 0 or prev_price <= 0:
-                        logger.warning("yfinance %s 价格无效: cur=%.2f, prev=%.2f", sym, current_price, prev_price)
-                        continue
-                    
-                    change = current_price - prev_price
-                    change_pct = (change / prev_price) * 100
-                    
-                    # Build sparkline from full history
-                    if sym not in self._history or len(self._history[sym]) < 5:
-                        self._history[sym] = [float(p) for p in closes.tolist()]
-                    
-                    self._history[sym].append(current_price)
-                    if len(self._history[sym]) > 20:
-                        self._history[sym] = self._history[sym][-20:]
-                    
-                    idx_data = IndexData(
-                        symbol=sym, name=name, region=region,
-                        price=round(current_price, 2),
-                        change=round(change, 2),
-                        change_percent=round(change_pct, 2),
-                        sparkline=self._history[sym].copy(),
-                        updated_at=now,
-                    )
-                    result[region].append(idx_data)
-                    logger.info("全球(yf) %s: %.2f (%.2f%%)", name, current_price, change_pct)
-                except Exception as e:
-                    logger.warning("解析全球指数 %s 失败: %s", sym, e)
-            except Exception as e:
-                logger.warning("yfinance 获取 %s 失败: %s", sym, e)
-            
-            # Add significant delay between requests to avoid rate limiting
-            # Longer delay for later requests
-            if idx < len(symbols) - 1:
-                delay = 10 + idx * 3  # 10s, 13s, 16s...
-                logger.debug("yfinance 请求延迟 %ds...", delay)
-                time_module.sleep(delay)
+    # ── 美股 (新浪 gb_ 实时) ─────────────────────────────────────
 
     def _fetch_global_sina(self, result: dict, now: datetime):
-        """Fetch global indices from Sina API.
-        
-        This is the most reliable source for Asian indices (日经225、KOSPI、富时100).
-        Each call creates a fresh sparkline to avoid stale cache issues.
-        """
+        import requests as req
+        codes = ",".join(_SINA_GLOBAL_MAP.values())
         try:
-            import requests as req
-            # Get all mapped symbols from Sina
-            codes = ",".join(_SINA_GLOBAL_MAP.values())
-            url = f"https://hq.sinajs.cn/list={codes}"
-            logger.debug("请求 Sina: %s", url)
-            resp = req.get(url, headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
+            resp = req.get(f"https://hq.sinajs.cn/list={codes}",
+                           headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
             resp.encoding = "gbk"
-            
-            lines = resp.text.strip().split("\n")
-            logger.debug("Sina 返回 %d 行", len(lines))
-            
-            for line in lines:
+            for line in resp.text.strip().split("\n"):
                 if '="' not in line:
                     continue
+                var_part, data_part = line.split('="', 1)
+                sina_code = var_part.rsplit("_", 1)[0].split("_")[-1] + "_" + var_part.rsplit("_", 1)[-1]
+                fields = data_part.rstrip('";').split(",")
+                if len(fields) < 5 or not fields[1]:
+                    continue
+
+                yf_sym = None
+                for ys, ss in _SINA_GLOBAL_MAP.items():
+                    if ss == sina_code:
+                        yf_sym = ys
+                        break
+                if not yf_sym:
+                    continue
+
+                info = GLOBAL_INDICES.get(yf_sym, {})
+                name = info.get("name", fields[0])
+                region = info.get("region", "其他")
+                price = float(fields[1])
+                change_pct = float(fields[2])
+                change = float(fields[4]) if fields[4] else price * change_pct / 100
+
+                self._history[yf_sym].append(price)
+                sparkline = self._history[yf_sym][-20:] if len(self._history[yf_sym]) >= 5 \
+                    else self._generate_sparkline(price, change)
+
+                result[region].append(IndexData(
+                    symbol=yf_sym, name=name, region=region,
+                    price=round(price, 2), change=round(change, 2),
+                    change_percent=round(change_pct, 2),
+                    sparkline=sparkline, updated_at=now,
+                ))
+                logger.info("全球(新浪) %s: %.2f (%.2f%%)", name, price, change_pct)
+        except Exception as e:
+            logger.error("全球(新浪)获取失败: %s", e)
+
+        # FTSE via int_ code (separate since format differs)
+        try:
+            resp = req.get("https://hq.sinajs.cn/list=int_ftse",
+                           headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
+            resp.encoding = "gbk"
+            for line in resp.text.strip().split("\n"):
+                if '="' not in line:
+                    continue
+                fields = line.split('="', 1)[1].rstrip('";').split(",")
+                if len(fields) < 4 or not fields[1]:
+                    continue
+                price = float(fields[1])
+                change = float(fields[2])
+                change_pct = float(fields[3]) if fields[3] else 0
+                self._history["^FTSE"].append(price)
+                sparkline = self._history["^FTSE"][-20:] if len(self._history["^FTSE"]) >= 5 \
+                    else self._generate_sparkline(price, change)
+                result["欧洲"].append(IndexData(
+                    symbol="^FTSE", name="富时100", region="欧洲",
+                    price=round(price, 2), change=round(change, 2),
+                    change_percent=round(change_pct, 2),
+                    sparkline=sparkline, updated_at=now,
+                ))
+                logger.info("全球(新浪) 富时100: %.2f (%.2f%%)", price, change_pct)
+        except Exception as e:
+            logger.warning("富时100获取失败: %s", e)
+
+    # ── 日韩 (AKShare 东方财富历史取最新值) ───────────────────────
+
+    def _fetch_global_akshare(self, result: dict, now: datetime):
+        existing = {idx.symbol for indices in result.values() for idx in indices}
+        try:
+            import akshare as ak
+            for sym, em_name in _AKSHARE_EM_NAMES.items():
+                if sym in existing:
+                    continue
                 try:
-                    var_part, data_part = line.split('="', 1)
-                    sina_code = var_part.rsplit("_", 1)[0].split("_")[-1] + "_" + var_part.rsplit("_", 1)[-1]
-                    fields = data_part.rstrip('";').split(",")
-                    if len(fields) < 4 or not fields[1]:
-                        logger.debug("跳过: %s (字段不足或价格为空)", sina_code)
+                    df = ak.index_global_hist_em(symbol=em_name)
+                    if df is None or df.empty:
                         continue
-                    
-                    # Map sina_code back to our symbol
-                    yf_sym = None
-                    for yf_s, sina_s in _SINA_GLOBAL_MAP.items():
-                        if sina_s == sina_code:
-                            yf_sym = yf_s
-                            break
-                    if not yf_sym:
-                        logger.debug("未识别的Sina代码: %s", sina_code)
-                        continue
-                    
-                    name = GLOBAL_INDICES.get(yf_sym, fields[0])
-                    region = REGION_MAP.get(yf_sym, "其他")
-                    price = float(fields[1])
-                    
-                    if price <= 0:
-                        logger.warning("新浪 %s 价格无效: %.2f", name, price)
-                        continue
-                    
-                    # Parse change based on Sina format
-                    if sina_code.startswith("gb_"):
-                        # gb_dji, gb_inx: fields[2] is change_pct, fields[4] is change
-                        change_pct = float(fields[2])
-                        change = float(fields[4]) if len(fields) > 4 and fields[4] else price * change_pct / 100
-                    else:
-                        # int_nikkei, int_ftse: fields[2] is change, fields[3] is change_pct
-                        change = float(fields[2])
-                        change_pct = float(fields[3]) if fields[3] else 0
-                    
-                    # Create fresh sparkline (do NOT append to self._history, create new)
-                    # This avoids pollution from stale cache
-                    sparkline = self._generate_sparkline(price, change, points=20)
-                    
-                    idx = IndexData(
-                        symbol=yf_sym, name=name, region=region,
+                    latest = df.iloc[-1]
+                    prev = df.iloc[-2] if len(df) > 1 else latest
+                    info = GLOBAL_INDICES.get(sym, {})
+                    name = info.get("name", em_name)
+                    region = info.get("region", "其他")
+
+                    close_col = "最新价" if "最新价" in df.columns else ("收盘" if "收盘" in df.columns else "close")
+                    open_col = "开盘" if "开盘" in df.columns else "open"
+                    high_col = "最高" if "最高" in df.columns else "high"
+                    low_col = "最低" if "最低" in df.columns else "low"
+                    price = float(latest[close_col])
+                    prev_close = float(prev[close_col])
+                    change = price - prev_close
+                    change_pct = (change / prev_close * 100) if prev_close else 0
+
+                    hist_closes = [float(row[close_col]) for _, row in df.tail(20).iterrows()]
+                    sparkline = hist_closes if len(hist_closes) >= 5 \
+                        else self._generate_sparkline(price, change)
+
+                    result[region].append(IndexData(
+                        symbol=sym, name=name, region=region,
                         price=round(price, 2), change=round(change, 2),
                         change_percent=round(change_pct, 2),
-                        sparkline=sparkline,
-                        updated_at=now,
-                    )
-                    result[region].append(idx)
-                    logger.info("全球(新浪) %s: %.2f (%.2f%%)", name, price, change_pct)
+                        sparkline=sparkline, updated_at=now,
+                    ))
+                    logger.info("全球(AK) %s: %.2f (%.2f%%)", name, price, change_pct)
                 except Exception as e:
-                    logger.debug("解析新浪一行失败: %s", e)
-        except Exception as e:
-            logger.error("新浪全球指数获取失败: %s", e)
+                    logger.warning("AKShare %s 获取失败: %s", em_name, e)
+        except ImportError:
+            logger.warning("akshare 未安装")
 
-    _COMMODITY_UNITS = {
-        "GC=F": ("美元/盎司", "元/克"),
-        "CL=F": ("美元/桶", ""),
-        "SI=F": ("美元/盎司", "元/克"),
-    }
+    # ── 大宗商品 (新浪期货) ───────────────────────────────────────
+
+    def _fetch_commodities(self, result: dict, now: datetime):
+        import requests as req
+        usd_cny = self._fetch_usd_cny()
+        # Build map: sina_code -> our_symbol  e.g. "hf_GC" -> "GC=F"
+        sina_to_sym = {f"hf_{s.split('=')[0]}": s for s in _SINA_COMMODITY_MAP}
+        codes = ",".join(sina_to_sym.keys())
+        try:
+            resp = req.get(f"https://hq.sinajs.cn/list={codes}",
+                           headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
+            resp.encoding = "gbk"
+            for line in resp.text.strip().split("\n"):
+                if '="' not in line:
+                    continue
+                var_part, data_part = line.split('="', 1)
+                hf_code = "hf_" + var_part.rsplit("_", 1)[-1]
+                fields = data_part.rstrip('";').split(",")
+                if len(fields) < 8 or not fields[0]:
+                    continue
+
+                sym = sina_to_sym.get(hf_code)
+                if not sym:
+                    continue
+
+                name, unit, alt_unit = _SINA_COMMODITY_MAP[sym]
+                price = float(fields[0])
+                prev_close = float(fields[7]) if fields[7] else price
+                change = price - prev_close
+                change_pct = (change / prev_close * 100) if prev_close else 0
+
+                self._history[sym].append(price)
+                sparkline = self._history[sym][-20:] if len(self._history[sym]) >= 5 \
+                    else self._generate_sparkline(price, change)
+
+                alt_price = None
+                if alt_unit and sym in ("GC=F", "SI=F"):
+                    alt_price = round(price * usd_cny / 31.1035, 2)
+
+                result["大宗商品"].append(IndexData(
+                    symbol=sym, name=name, region="大宗商品",
+                    price=round(price, 2), change=round(change, 2),
+                    change_percent=round(change_pct, 2),
+                    sparkline=sparkline, updated_at=now,
+                    unit=unit, alt_price=alt_price, alt_unit=alt_unit,
+                ))
+                logger.info("商品 %s: %.2f %s (中国:%.2f %s)", name, price, unit, alt_price or 0, alt_unit)
+        except Exception as e:
+            logger.error("大宗商品获取失败: %s", e)
 
     def _fetch_usd_cny(self) -> float:
         try:
@@ -623,143 +428,39 @@ class MarketDataService:
             pass
         return 7.25
 
-    def _fetch_commodities_sina(self, result: dict, now: datetime):
-        """Fetch commodities from Sina (GC=F gold, CL=F oil, SI=F silver).
-        
-        For K-line consistency, ensure sparkline and current price come from the same daily source.
-        """
-        existing = {idx.symbol for idx in result.get("大宗商品", [])}
-        usd_cny = self._fetch_usd_cny()
-        try:
-            import requests as req
-            codes = ",".join(_SINA_COMMODITY_MAP.values())
-            url = f"https://hq.sinajs.cn/list={codes}"
-            resp = req.get(url, headers={"Referer": "https://finance.sina.com.cn"}, timeout=10)
-            resp.encoding = "gbk"
-            for line in resp.text.strip().split("\n"):
-                if '="' not in line:
-                    continue
-                var_part, data_part = line.split('="', 1)
-                sina_code = "hf_" + var_part.rsplit("_", 1)[-1]
-                fields = data_part.rstrip('";').split(",")
-                if len(fields) < 8 or not fields[0]:
-                    continue
-                yf_sym = None
-                for yf_s, sina_s in _SINA_COMMODITY_MAP.items():
-                    if sina_s == sina_code:
-                        yf_sym = yf_s
-                        break
-                if not yf_sym or yf_sym in existing:
-                    continue
-                
-                name = GLOBAL_INDICES.get(yf_sym, fields[0])
-                price = float(fields[0])
-                prev_close = float(fields[7]) if fields[7] else price
-                if price <= 0:
-                    continue
-                change = price - prev_close
-                change_pct = (change / prev_close * 100) if prev_close else 0
-
-                # Always append new price to history (consistent with real-time updates)
-                self._history[yf_sym].append(price)
-                if len(self._history[yf_sym]) > 20:
-                    self._history[yf_sym] = self._history[yf_sym][-20:]
-                
-                # Use history-based sparkline if available, else synthetic
-                sparkline = self._history[yf_sym].copy() if len(self._history[yf_sym]) >= 5 \
-                    else self._generate_sparkline(price, change)
-
-                units = self._COMMODITY_UNITS.get(yf_sym, ("", ""))
-                alt_price = None
-                if units[1] and yf_sym in ("GC=F", "SI=F"):
-                    alt_price = round(price * usd_cny / 31.1035, 2)
-
-                idx = IndexData(
-                    symbol=yf_sym, name=name, region="大宗商品",
-                    price=round(price, 2), change=round(change, 2),
-                    change_percent=round(change_pct, 2),
-                    sparkline=sparkline, updated_at=now,
-                    unit=units[0], alt_price=alt_price, alt_unit=units[1],
-                )
-                result["大宗商品"].append(idx)
-                logger.info("大宗商品(新浪) %s: %.2f %s (中国:%.2f %s)",
-                            name, price, units[0], alt_price or 0, units[1])
-        except Exception as e:
-            logger.error("新浪大宗商品备用也失败: %s", e)
+    # ── K线数据 ──────────────────────────────────────────────────
 
     def get_kline(self, symbol: str, period: str = "day") -> dict:
         cache_key = f"{symbol}:{period}"
         if cache_key in _kline_cache:
-            cached_time, cached_data = _kline_cache[cache_key]
-            if time.time() - cached_time < KLINE_CACHE_TTL:
-                return cached_data
-
+            ts, data = _kline_cache[cache_key]
+            if time.time() - ts < KLINE_CACHE_TTL:
+                return data
         try:
             if symbol in CN_INDICES:
-                data = self._get_cn_kline(symbol, period)
+                data = self._kline_cn(symbol, period)
             elif symbol in HK_INDICES:
-                data = self._get_hk_kline(symbol, period)
+                data = self._kline_hk(symbol, period)
+            elif symbol in _AKSHARE_EM_NAMES:
+                data = self._kline_akshare_em(symbol, period)
             else:
-                data = self._get_global_kline(symbol, period)
+                data = self._kline_yf(symbol, period)
             _kline_cache[cache_key] = (time.time(), data)
             return data
         except Exception as e:
-            logger.error("获取K线数据失败 %s/%s: %s", symbol, period, e)
+            logger.error("K线获取失败 %s/%s: %s", symbol, period, e)
             return {"dates": [], "opens": [], "highs": [], "lows": [],
                     "closes": [], "volumes": [], "name": symbol}
 
-    def _get_cn_kline(self, symbol: str, period: str) -> dict:
-        name = CN_INDICES.get(symbol, symbol)
-        try:
-            return self._get_cn_kline_akshare(symbol, period, name)
-        except Exception as e:
-            logger.warning("AKShare K线失败, 尝试新浪备用: %s", e)
-            return self._get_cn_kline_sina(symbol, period, name)
-
-    def _get_cn_kline_akshare(self, symbol: str, period: str, name: str) -> dict:
-        import akshare as ak
-        if period == "minute":
-            df = ak.index_zh_a_hist_min_em(symbol=symbol, period="5")
-            df = df.tail(48)
-        elif period == "5day":
-            df = ak.index_zh_a_hist_min_em(symbol=symbol, period="5")
-            df = df.tail(240)
-        elif period == "week":
-            end = datetime.now().strftime("%Y%m%d")
-            start = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
-            df = ak.index_zh_a_hist(symbol=symbol, period="weekly", start_date=start, end_date=end)
-        else:
-            end = datetime.now().strftime("%Y%m%d")
-            start = (datetime.now() - timedelta(days=180)).strftime("%Y%m%d")
-            df = ak.index_zh_a_hist(symbol=symbol, period="daily", start_date=start, end_date=end)
-            df = df.tail(120)
-        dates = df["时间"].astype(str).tolist() if period in ("minute", "5day") else df["日期"].astype(str).tolist()
-        return {
-            "dates": dates,
-            "opens": df["开盘"].astype(float).tolist(),
-            "highs": df["最高"].astype(float).tolist(),
-            "lows": df["最低"].astype(float).tolist(),
-            "closes": df["收盘"].astype(float).tolist(),
-            "volumes": df["成交量"].astype(float).tolist() if "成交量" in df.columns else [0] * len(dates),
-            "name": name,
-        }
-
-    def _get_cn_kline_sina(self, symbol: str, period: str, name: str) -> dict:
+    def _kline_cn(self, symbol: str, period: str) -> dict:
         import requests as req
+        name = CN_INDICES.get(symbol, symbol)
         prefix = "sh" if symbol.startswith("0000") or symbol.startswith("0006") else "sz"
-        sina_symbol = f"{prefix}{symbol}"
-        if period == "minute":
-            scale, datalen = "5", "48"
-        elif period == "5day":
-            scale, datalen = "5", "240"
-        elif period == "week":
-            scale, datalen = "1200", "52"
-        else:
-            scale, datalen = "240", "120"
-        url = (
-            f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
-            f"CN_MarketData.getKLineData?symbol={sina_symbol}&scale={scale}&ma=no&datalen={datalen}"
-        )
+        scale_map = {"minute": "5", "5day": "5", "week": "1200", "day": "240"}
+        datalen_map = {"minute": "48", "5day": "240", "week": "52", "day": "120"}
+        url = (f"https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+               f"CN_MarketData.getKLineData?symbol={prefix}{symbol}"
+               f"&scale={scale_map.get(period, '240')}&ma=no&datalen={datalen_map.get(period, '120')}")
         resp = req.get(url, headers={"Referer": "https://finance.sina.com.cn"}, timeout=15)
         data = resp.json()
         if not data:
@@ -774,124 +475,63 @@ class MarketDataService:
             "name": name,
         }
 
-    def _get_hk_kline(self, symbol: str, period: str) -> dict:
+    def _kline_hk(self, symbol: str, period: str) -> dict:
         name = HK_INDICES.get(symbol, symbol)
-        if period in ("minute", "5day"):
-            return self._get_global_kline_yf(
-                {"HSI": "^HSI", "HSCEI": "^HSCE", "HSTECH": "^HSTECH"}.get(symbol, "^HSI"),
-                period, name,
-            )
-        try:
-            import akshare as ak
-            df = ak.stock_hk_index_hist_em(symbol=symbol)
-        except Exception:
-            import akshare as ak
-            df = ak.stock_hk_index_daily_sina(symbol=symbol)
-        df = df.tail(52 if period == "week" else 120)
+        yf_map = {"HSI": "^HSI", "HSCEI": "^HSCE", "HSTECH": "^HSTECH"}
+        return self._kline_yf(yf_map.get(symbol, "^HSI"), period, name)
+
+    def _kline_akshare_em(self, symbol: str, period: str) -> dict:
+        import akshare as ak
+        em_name = _AKSHARE_EM_NAMES.get(symbol, symbol)
+        info = GLOBAL_INDICES.get(symbol, {})
+        name = info.get("name", em_name)
+        df = ak.index_global_hist_em(symbol=em_name)
+        if period == "week":
+            df = df.tail(52)
+        else:
+            df = df.tail(120)
         date_col = "日期" if "日期" in df.columns else "date"
-        close_col = "收盘" if "收盘" in df.columns else "close"
+        close_col = "最新价" if "最新价" in df.columns else ("收盘" if "收盘" in df.columns else "close")
         open_col = "开盘" if "开盘" in df.columns else "open"
         high_col = "最高" if "最高" in df.columns else "high"
         low_col = "最低" if "最低" in df.columns else "low"
         vol_col = "成交量" if "成交量" in df.columns else ("volume" if "volume" in df.columns else None)
         return {
             "dates": df[date_col].astype(str).tolist(),
-            "opens": df[open_col].astype(float).tolist(),
-            "highs": df[high_col].astype(float).tolist(),
-            "lows": df[low_col].astype(float).tolist(),
+            "opens": df[open_col].astype(float).tolist() if open_col in df.columns else [0] * len(df),
+            "highs": df[high_col].astype(float).tolist() if high_col in df.columns else [0] * len(df),
+            "lows": df[low_col].astype(float).tolist() if low_col in df.columns else [0] * len(df),
             "closes": df[close_col].astype(float).tolist(),
             "volumes": df[vol_col].astype(float).tolist() if vol_col else [0] * len(df),
             "name": name,
         }
 
-    def _get_global_kline(self, symbol: str, period: str) -> dict:
-        """Get K-line for global indices (日经、KOSPI、富时等).
-        
-        Try TwelveData (if key available), then yfinance, handle all global indices.
-        """
-        name = GLOBAL_INDICES.get(symbol, symbol)
-        if self._td_api_key and symbol in _TWELVEDATA_MAP:
-            try:
-                return self._get_global_kline_td(symbol, period, name)
-            except Exception as e:
-                logger.warning("TwelveData K线失败 %s: %s, 尝试yfinance", symbol, e)
-        
-        # yfinance supports all yahoo finance symbols including ^N225, ^KS11, ^FTSE
-        return self._get_global_kline_yf(symbol, period, name)
-
-    def _get_global_kline_td(self, symbol: str, period: str, name: str) -> dict:
-        import requests as req
-        td_sym = _TWELVEDATA_MAP[symbol]
+    def _kline_yf(self, symbol: str, period: str, name: str = "") -> dict:
+        import yfinance as yf
+        if not name:
+            info = GLOBAL_INDICES.get(symbol, {})
+            name = info.get("name", symbol)
+        kw = {"tickers": symbol, "progress": False}
         if period == "minute":
-            interval, outputsize = "5min", 48
+            kw.update(period="1d", interval="5m")
         elif period == "5day":
-            interval, outputsize = "15min", 240
+            kw.update(period="5d", interval="15m")
         elif period == "week":
-            interval, outputsize = "1week", 52
+            kw.update(period="1y", interval="1wk")
         else:
-            interval, outputsize = "1day", 120
-        url = (
-            f"https://api.twelvedata.com/time_series?symbol={td_sym}"
-            f"&interval={interval}&outputsize={outputsize}&apikey={self._td_api_key}"
-        )
-        resp = req.get(url, timeout=15)
-        data = resp.json()
-        if "values" not in data:
-            raise ValueError(data.get("message", "no data"))
-        values = list(reversed(data["values"]))
+            kw.update(period="6mo", interval="1d")
+        df = yf.download(**kw)
+        if df is None or df.empty:
+            return {"dates": [], "opens": [], "highs": [], "lows": [], "closes": [], "volumes": [], "name": name}
+        if isinstance(df.columns, pd.MultiIndex) and symbol in df.columns.get_level_values(0):
+            df = df[symbol]
+        fmt = "%Y-%m-%d %H:%M" if period in ("minute", "5day") else "%Y-%m-%d"
         return {
-            "dates": [v["datetime"] for v in values],
-            "opens": [float(v["open"]) for v in values],
-            "highs": [float(v["high"]) for v in values],
-            "lows": [float(v["low"]) for v in values],
-            "closes": [float(v["close"]) for v in values],
-            "volumes": [int(float(v.get("volume", 0))) for v in values],
+            "dates": df.index.strftime(fmt).tolist(),
+            "opens": df["Open"].round(2).tolist(),
+            "highs": df["High"].round(2).tolist(),
+            "lows": df["Low"].round(2).tolist(),
+            "closes": df["Close"].round(2).tolist(),
+            "volumes": df["Volume"].astype(int).tolist() if "Volume" in df.columns else [0] * len(df),
             "name": name,
         }
-
-    def _get_global_kline_yf(self, symbol: str, period: str, name: str) -> dict:
-        """Fetch K-line from yfinance using appropriate interval.
-        
-        Key: For daily/weekly K-lines, always use daily interval (1d, 1wk) 
-        to match the sparkline Close data which also uses daily closes.
-        """
-        import yfinance as yf
-        try:
-            if period == "minute":
-                # 1 day of 5-min data
-                kwargs = dict(tickers=symbol, period="1d", interval="5m", progress=False)
-            elif period == "5day":
-                # 5 days of 15-min data  
-                kwargs = dict(tickers=symbol, period="5d", interval="15m", progress=False)
-            elif period == "week":
-                # 1 year of weekly data
-                kwargs = dict(tickers=symbol, period="1y", interval="1wk", progress=False)
-            else:  # "day"
-                # 6 months of daily data
-                kwargs = dict(tickers=symbol, period="6mo", interval="1d", progress=False)
-            
-            df = yf.download(**kwargs)
-            if df is None or df.empty:
-                logger.warning("yfinance K线无数据: %s", symbol)
-                return {"dates": [], "opens": [], "highs": [], "lows": [], "closes": [], "volumes": [], "name": name}
-            
-            if isinstance(df.columns, pd.MultiIndex):
-                df = df[symbol] if symbol in df.columns.get_level_values(0) else df
-            
-            dates = df.index.strftime("%Y-%m-%d %H:%M").tolist() if period in ("minute", "5day") \
-                else df.index.strftime("%Y-%m-%d").tolist()
-            
-            result = {
-                "dates": dates,
-                "opens": df["Open"].round(2).tolist() if "Open" in df.columns else [0] * len(df),
-                "highs": df["High"].round(2).tolist() if "High" in df.columns else [0] * len(df),
-                "lows": df["Low"].round(2).tolist() if "Low" in df.columns else [0] * len(df),
-                "closes": df["Close"].round(2).tolist() if "Close" in df.columns else [0] * len(df),
-                "volumes": df["Volume"].astype(int).tolist() if "Volume" in df.columns else [0] * len(df),
-                "name": name,
-            }
-            logger.info("yfinance K线 %s/%s: %d条", symbol, period, len(dates))
-            return result
-        except Exception as e:
-            logger.error("yfinance K线获取失败 %s/%s: %s", symbol, period, e)
-            return {"dates": [], "opens": [], "highs": [], "lows": [], "closes": [], "volumes": [], "name": name}

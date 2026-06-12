@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Body, Request
 
 from backend.models.market import IndexData
 
@@ -28,7 +28,7 @@ async def get_market_status(request: Request) -> dict:
 
 
 @router.get("/settings")
-async def get_market_settings(request: Request) -> dict:
+async def get_settings_endpoint(request: Request) -> dict:
     settings = request.app.state.settings
     return {
         "market_refresh_interval": settings.market_refresh_interval,
@@ -37,24 +37,17 @@ async def get_market_settings(request: Request) -> dict:
 
 
 @router.post("/settings")
-async def update_market_settings(request: Request, payload: dict) -> dict:
+async def update_settings_endpoint(request: Request, payload: dict = Body(...)) -> dict:
     settings = request.app.state.settings
-    scheduler = request.app.state.scheduler
-    updated = {}
-    m = payload.get("market_refresh_interval")
-    n = payload.get("news_refresh_interval")
-    if m is not None:
-        settings.market_refresh_interval = int(m)
-        try:
-            scheduler.reschedule_job("market_refresh", trigger="interval", seconds=settings.market_refresh_interval)
-        except Exception:
-            pass
-        updated["market_refresh_interval"] = settings.market_refresh_interval
-    if n is not None:
-        settings.news_refresh_interval = int(n)
-        try:
-            scheduler.reschedule_job("news_refresh", trigger="interval", seconds=settings.news_refresh_interval)
-        except Exception:
-            pass
-        updated["news_refresh_interval"] = settings.news_refresh_interval
-    return {"updated": updated}
+    if "market_refresh_interval" in payload:
+        val = int(payload["market_refresh_interval"])
+        if 5 <= val <= 3600:
+            settings.market_refresh_interval = val
+    if "news_refresh_interval" in payload:
+        val = int(payload["news_refresh_interval"])
+        if 30 <= val <= 86400:
+            settings.news_refresh_interval = val
+    return {
+        "market_refresh_interval": settings.market_refresh_interval,
+        "news_refresh_interval": settings.news_refresh_interval,
+    }
