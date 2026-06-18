@@ -122,3 +122,28 @@ def get_all_tools() -> list:
         get_latest_news,
         get_market_status,
     ]
+
+
+def get_builtin_tools() -> list:
+    return get_all_tools()
+
+
+def load_search_tools(settings: Any) -> list:
+    """加载搜索工具（Tavily）。"""
+    tools = []
+    tavily_key = getattr(settings, "tavily_api_key", "")
+    if tavily_key:
+        try:
+            from langchain_tavily import TavilySearch
+            tools.append(TavilySearch(
+                tavily_api_key=tavily_key,
+                max_results=5,
+                search_depth="advanced",
+                include_answer=True,
+            ))
+            logger.info("Tavily 搜索工具已加载")
+        except Exception as e:
+            logger.warning("Tavily 加载失败: %s", e)
+    else:
+        logger.info("未配置 TAVILY_API_KEY，联网搜索不可用")
+    return tools

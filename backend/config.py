@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     twelvedata_api: str = ""
     tavily_api_key: str = ""
 
+    rag_persist_dir: str = ""
+
     market_refresh_interval: int = 60
     news_refresh_interval: int = 300
 

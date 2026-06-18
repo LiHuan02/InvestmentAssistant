@@ -3,14 +3,14 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from backend.config import Settings
-from backend.services.market_service import MarketDataService
+from backend.services.market_service import MarketDataService, _any_market_open
 from backend.services.news_service import NewsService
 
 logger = logging.getLogger(__name__)
 
 
 async def _market_refresh_wrapper(market_service: MarketDataService):
-    if not market_service._any_market_open():
+    if not _any_market_open():
         logger.info("所有市场已收盘，跳过本次数据刷新")
         return
     logger.debug("市场部分开放，开始数据刷新")

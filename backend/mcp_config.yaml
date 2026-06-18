@@ -1,23 +1,29 @@
-# MCP 服务器配置
-# 取消注释并填写配置即可启用对应的 MCP 服务器
-# Agent 启动时会自动加载此处配置的工具
+mcp_servers:
 
-mcp_servers: {}
-  # Alpha Vantage (远程 MCP，需 API Key)
+  # Alpha Vantage 金融数据（远程 MCP）
+  # 注册免费 API Key: https://www.alphavantage.co/support/#api-key
   # alpha_vantage:
+  #   enabled: true
   #   transport: streamable_http
-  #   url: "https://mcp.alphavantage.co/mcp?apikey=YOUR_KEY"
+  #   url: "https://mcp.alphavantage.co/mcp"
+  #   env:
+  #     ALPHAVANTAGE_API_KEY: "${ALPHAVANTAGE_API_KEY}"
 
-  # Financial Datasets (本地 STDIO)
+  # Financial Datasets（本地 STDIO MCP）
   # financial_datasets:
+  #   enabled: true
   #   command: python
-  #   args: ["path/to/financial_datasets_server.py"]
+  #   args: ["-m", "financial_datasets_mcp"]
   #   transport: stdio
   #   env:
-  #     FINANCIAL_DATASETS_API_KEY: "YOUR_KEY"
+  #     FINANCIAL_DATASETS_API_KEY: "${FINANCIAL_DATASETS_API_KEY}"
 
-  # Trading MCP (股票筛选 + 情绪分析)
-  # trading:
-  #   command: python
-  #   args: ["path/to/trading_mcp/server.py"]
+  # Brave Search（远程 MCP）
+  # 注册免费 API Key: https://api-dashboard.search.brave.com
+  # brave_search:
+  #   enabled: true
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-brave-search"]
   #   transport: stdio
+  #   env:
+  #     BRAVE_API_KEY: "${BRAVE_API_KEY}"
