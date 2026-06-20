@@ -14,6 +14,7 @@ export interface ConversationDetail extends Conversation {
     timestamp: string;
     toolCalls?: any[];
   }>;
+  error?: string;
 }
 
 export async function listConversations(): Promise<Conversation[]> {

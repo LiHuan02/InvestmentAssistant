@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Investment Assistant</string>
+    <string name="title_activity_main">Investment Assistant</string>
+    <string name="package_name">com.investment.assistant</string>
+    <string name="custom_url_scheme">com.investment.assistant</string>
+</resources>

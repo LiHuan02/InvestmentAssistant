@@ -1,0 +1,8 @@
+[target.x86_64-pc-windows-gnu]
+linker = "E:/rust-gnu-bin/ld.lld.exe"
+rustflags = [
+  "-C", "link-arg=-m",
+  "-C", "link-arg=i386pep",
+  "-C", "link-arg=-L",
+  "-C", "link-arg=E:/rust-gnu-libs",
+]

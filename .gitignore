@@ -14,3 +14,13 @@ frontend/dist/
 data/
 tmp_*.json
 None/
+src-tauri/target/
+backend/build/
+backend/dist/
+*.spec.bak
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/android/capacitor.settings.gradle
+InvestmentAssistant.apk
+InvestmentAssistant-*.apk
+release-key.jks

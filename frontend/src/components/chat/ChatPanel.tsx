@@ -137,7 +137,7 @@ export default function ChatPanel() {
     try { await apiClient.post('/chat/skill/toggle', { id, enabled }); } catch { /* ignore */ }
   };
 
-  const handleMcpToggle = async (id: string, _enabled: boolean) => {
+  const handleMcpToggle = async (_id: string, _enabled: boolean) => {
     // MCP servers are config-based, toggling triggers reload
     try { await apiClient.post('/chat/mcp/reload'); } catch { /* ignore */ }
   };

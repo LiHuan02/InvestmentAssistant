@@ -18,9 +18,11 @@ export function useWebSocket<T = unknown>(
 
   const connect = useCallback(() => {
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.host;
-      const ws = new WebSocket(`${protocol}//${host}${path}`);
+      const isTauri = !!(window as any).__TAURI__;
+      const wsUrl = isTauri
+        ? `ws://localhost:8000${path}`
+        : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${path}`;
+      const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         setIsConnected(true);

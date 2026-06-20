@@ -1,0 +1,50 @@
+{
+  "productName": "Investment Assistant",
+  "version": "0.1.0",
+  "identifier": "com.investment.assistant",
+  "build": {
+    "frontendDist": "../frontend/dist",
+    "beforeBuildCommand": "cd frontend && npm run build",
+    "beforeDevCommand": "cd frontend && npx vite"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "市场投资助手",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/investment-backend"
+    ]
+  },
+  "plugins": {
+    "shell": {
+      "sidecar": true,
+      "scope": [
+        {
+          "name": "binaries/investment-backend",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  }
+}

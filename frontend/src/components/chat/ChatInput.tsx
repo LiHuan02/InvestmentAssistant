@@ -1,4 +1,3 @@
-import { type RefObject } from 'react';
 import { Input, Button } from 'antd';
 import { SendOutlined } from '@ant-design/icons';
 
@@ -9,7 +8,7 @@ interface ChatInputProps {
   onSend: (message: string) => void;
   onChange: (value: string) => void;
   disabled?: boolean;
-  inputRef?: RefObject<HTMLTextAreaElement | null>;
+  inputRef?: React.Ref<any>;
 }
 
 export default function ChatInput({ value, onSend, onChange, disabled, inputRef }: ChatInputProps) {
