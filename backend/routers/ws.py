@@ -32,23 +32,3 @@ async def ws_market(websocket: WebSocket):
         logger.info("Market WebSocket client disconnected")
     finally:
         event_bus.unsubscribe("market_update", queue)
-
-
-@router.websocket("/ws/news")
-async def ws_news(websocket: WebSocket):
-    await websocket.accept()
-    queue = event_bus.subscribe("news_update")
-    try:
-        while True:
-            item = await queue.get()
-            await websocket.send_json(
-                {
-                    "type": "news_update",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "data": item.model_dump(mode="json"),
-                }
-            )
-    except WebSocketDisconnect:
-        logger.info("News WebSocket client disconnected")
-    finally:
-        event_bus.unsubscribe("news_update", queue)

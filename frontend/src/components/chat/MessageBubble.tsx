@@ -1,7 +1,9 @@
-import { Typography, Space, Tag } from 'antd';
-import { UserOutlined, RobotOutlined } from '@ant-design/icons';
+import { useState } from 'react';
+import { Typography, Space, Tag, Button, Tooltip, message } from 'antd';
+import { UserOutlined, RobotOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import dayjs from 'dayjs';
 import type { ChatMessage } from '../../types/chat';
 import ToolCallCard from './ToolCallCard';
 
@@ -12,9 +14,18 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
 }
 
-export default function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
-  const isUser = message.role === 'user';
-  const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
+export default function MessageBubble({ message: msg, isStreaming }: MessageBubbleProps) {
+  const isUser = msg.role === 'user';
+  const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(msg.content).then(() => {
+      setCopied(true);
+      message.success('已复制');
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
     <div
@@ -32,13 +43,29 @@ export default function MessageBubble({ message, isStreaming }: MessageBubblePro
           alignItems: isUser ? 'flex-end' : 'flex-start',
         }}
       >
-        <Tag
-          icon={isUser ? <UserOutlined /> : <RobotOutlined />}
-          color={isUser ? 'blue' : 'green'}
-          style={{ borderRadius: '12px' }}
-        >
-          {isUser ? '我' : 'AI 助手'}
-        </Tag>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Tag
+            icon={isUser ? <UserOutlined /> : <RobotOutlined />}
+            color={isUser ? 'blue' : 'green'}
+            style={{ borderRadius: '12px', margin: 0 }}
+          >
+            {isUser ? '我' : 'AI 助手'}
+          </Tag>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {dayjs(msg.timestamp).format('HH:mm')}
+          </Text>
+          {!isUser && msg.content && !isStreaming && (
+            <Tooltip title="复制">
+              <Button
+                type="text"
+                size="small"
+                icon={copied ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
+                onClick={handleCopy}
+                style={{ padding: '0 4px', height: 20 }}
+              />
+            </Tooltip>
+          )}
+        </div>
         <div
           style={{
             background: isUser ? '#e6f7ff' : '#fff',
@@ -48,25 +75,25 @@ export default function MessageBubble({ message, isStreaming }: MessageBubblePro
           }}
         >
           {hasToolCalls && (
-            <div style={{ marginBottom: message.content ? '8px' : 0 }}>
-              {message.toolCalls!.map((tc, i) => (
+            <div style={{ marginBottom: msg.content ? '8px' : 0 }}>
+              {msg.toolCalls!.map((tc, i) => (
                 <ToolCallCard key={`${tc.name}-${i}`} toolCall={tc} />
               ))}
             </div>
           )}
           {isUser ? (
-            <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
-          ) : message.content ? (
+            <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+          ) : msg.content ? (
             <div className="markdown-body" style={{ fontSize: '14px', lineHeight: 1.7 }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.content}
+                {msg.content}
               </ReactMarkdown>
             </div>
           ) : null}
-          {isStreaming && !message.content && !hasToolCalls && (
+          {isStreaming && !msg.content && !hasToolCalls && (
             <Text type="secondary">思考中...</Text>
           )}
-          {isStreaming && message.content && (
+          {isStreaming && msg.content && (
             <span
               style={{
                 display: 'inline-block',

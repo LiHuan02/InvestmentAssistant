@@ -21,3 +21,9 @@ export interface KlineData {
   volumes: number[];
   name: string;
 }
+
+export interface MarketStatus {
+  utc_time: string;
+  any_open: boolean;
+  markets: Record<string, boolean>;
+}

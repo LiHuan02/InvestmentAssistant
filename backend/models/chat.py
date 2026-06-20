@@ -13,6 +13,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
+    conversation_id: str | None = None
 
 
 class ChatResponse(BaseModel):

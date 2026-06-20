@@ -4,7 +4,8 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+import yaml
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
@@ -18,10 +19,11 @@ from backend.services.agent_tools import (
 )
 from backend.services.mcp_manager import MCPManager
 from backend.services.rag_service import ChromaRAGService
+from backend.services import skills_service
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """你是一位专业的投资顾问AI助手，具备以下能力：
+BASE_SYSTEM_PROMPT = """你是一位专业的投资顾问AI助手，具备以下能力：
 
 1. **实时行情查询**：获取全球主要市场（A股、港股、美股、日股、韩股、欧洲、大宗商品）的实时行情
 2. **K线分析**：查询任意指数的分时、日K、周K历史数据
@@ -38,6 +40,8 @@ SYSTEM_PROMPT = """你是一位专业的投资顾问AI助手，具备以下能�
 - 涉及具体投资决策时，务必附上免责声明
 - 使用中文回复，格式清晰，善用表格和列表
 - 使用 Markdown 格式组织回复内容"""
+
+MCP_CONFIG_PATH = str(Path(__file__).parent.parent / "mcp_config.yaml")
 
 
 @tool
@@ -79,31 +83,55 @@ class ChatService:
 
     def __init__(self, settings: Settings, market_service: Any = None, news_service: Any = None):
         self._settings = settings
-        self._llm = ChatOpenAI(
-            api_key=settings.ai_api_key or "dummy",
-            base_url=settings.ai_base_url,
-            model=settings.ai_model,
-            max_tokens=settings.ai_max_tokens,
-            temperature=settings.ai_temperature,
-            streaming=True,
-        )
+        self._market_service = market_service
+        self._news_service = news_service
 
         if market_service and news_service:
             init_tool_services(market_service, news_service)
 
-        tools: list = get_builtin_tools()
-        tools.extend(load_search_tools(settings))
-
         global _rag_service
-        _rag_service = ChromaRAGService(persist_dir=str(Path(settings.rag_persist_dir) if settings.rag_persist_dir else None))
-        if _rag_service.is_available:
+        _rag_service = ChromaRAGService(
+            persist_dir=str(Path(settings.rag_persist_dir)) if settings.rag_persist_dir else None
+        )
+
+        self._mcp_manager = MCPManager(MCP_CONFIG_PATH)
+        self._rebuild_llm()
+        self._rebuild_agent()
+
+    def _rebuild_llm(self) -> None:
+        s = self._settings
+        self._llm = ChatOpenAI(
+            api_key=s.ai_api_key or "dummy",
+            base_url=s.ai_base_url,
+            model=s.ai_model,
+            max_tokens=s.ai_max_tokens,
+            temperature=s.ai_temperature,
+            streaming=True,
+        )
+
+    def _rebuild_agent(self) -> None:
+        tools: list = get_builtin_tools()
+        tools.extend(load_search_tools(self._settings))
+
+        if _rag_service and _rag_service.is_available:
             tools.append(search_knowledge_base)
 
-        config_path = str(Path(__file__).parent.parent / "mcp_config.yaml")
-        self._mcp_manager = MCPManager(config_path)
-
         self._tools = tools
-        self._agent = create_react_agent(self._llm, tools, prompt=SYSTEM_PROMPT)
+        prompt = BASE_SYSTEM_PROMPT + skills_service.get_active_prompts()
+        self._agent = create_react_agent(self._llm, tools, prompt=prompt)
+        logger.info("Agent 已重建: %d 个工具", len(tools))
+
+    def reload(self) -> dict:
+        """完整重载：LLM + MCP + Skills + Agent。"""
+        self._rebuild_llm()
+        self._mcp_manager = MCPManager(MCP_CONFIG_PATH)
+        self._rebuild_agent()
+        return {
+            "model": self._settings.ai_model,
+            "tools": len(self._tools),
+            "mcp_servers": self._mcp_manager.server_names,
+            "skills": [s["name"] for s in skills_service.list_skills() if s.get("enabled")],
+        }
 
     def get_commands(self) -> list[QuickCommand]:
         return self.QUICK_COMMANDS
@@ -153,3 +181,62 @@ class ChatService:
                 messages.append(AIMessage(content=msg.content))
         messages.append(HumanMessage(content=user_msg))
         return messages
+
+    # ── MCP 管理 ──────────────────────────────────────────────
+
+    @staticmethod
+    def mcp_list() -> list[dict]:
+        path = Path(MCP_CONFIG_PATH)
+        if not path.exists():
+            return []
+        with open(path, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+        servers = config.get("mcp_servers", {}) or {}
+        result = []
+        for name, conf in servers.items():
+            result.append({
+                "name": name,
+                "enabled": conf.get("enabled", True),
+                "transport": conf.get("transport", "stdio"),
+                "url": conf.get("url", ""),
+                "command": conf.get("command", ""),
+            })
+        return result
+
+    @staticmethod
+    def mcp_add(name: str, transport: str, url: str = "", command: str = "", args: list[str] | None = None) -> dict:
+        path = Path(MCP_CONFIG_PATH)
+        config = {}
+        if path.exists():
+            with open(path, encoding="utf-8") as f:
+                config = yaml.safe_load(f) or {}
+        servers = config.get("mcp_servers", {}) or {}
+        server_conf = {"enabled": True, "transport": transport}
+        if url:
+            server_conf["url"] = url
+        if command:
+            server_conf["command"] = command
+            server_conf["args"] = args or []
+        servers[name] = server_conf
+        config["mcp_servers"] = servers
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        logger.info("MCP 服务器已添加: %s", name)
+        return {"ok": True, "name": name}
+
+    @staticmethod
+    def mcp_remove(name: str) -> dict:
+        path = Path(MCP_CONFIG_PATH)
+        if not path.exists():
+            return {"error": "配置文件不存在"}
+        with open(path, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+        servers = config.get("mcp_servers", {}) or {}
+        if name not in servers:
+            return {"error": f"MCP 服务器 '{name}' 不存在"}
+        del servers[name]
+        config["mcp_servers"] = servers
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        logger.info("MCP 服务器已移除: %s", name)
+        return {"ok": True, "removed": name}

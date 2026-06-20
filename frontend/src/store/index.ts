@@ -21,8 +21,6 @@ export const useSettingsStore = create<SettingsStore>()(
 export function useColor() {
   const redUp = useSettingsStore((s) => s.redUp);
   return {
-    upColor: redUp ? '#cf1322' : '#3f8600',
-    downColor: redUp ? '#3f8600' : '#cf1322',
     getColor: (change: number) => (change >= 0 ? (redUp ? '#cf1322' : '#3f8600') : (redUp ? '#3f8600' : '#cf1322')),
   };
 }
@@ -45,6 +43,7 @@ interface ChatStore {
   messages: ChatMessage[];
   isStreaming: boolean;
   addMessage: (msg: ChatMessage) => void;
+  loadMessages: (msgs: ChatMessage[]) => void;
   appendToLastAssistant: (token: string) => void;
   addToolCall: (name: string, input: string) => void;
   updateToolCall: (name: string, output: string) => void;
@@ -56,6 +55,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   messages: [],
   isStreaming: false,
   addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
+  loadMessages: (msgs) => set({ messages: msgs, isStreaming: false }),
   appendToLastAssistant: (token) =>
     set((state) => {
       const messages = [...state.messages];

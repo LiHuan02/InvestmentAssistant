@@ -1,15 +1,20 @@
 mcp_servers:
 
-  # Alpha Vantage 金融数据（远程 MCP）
-  # 注册免费 API Key: https://www.alphavantage.co/support/#api-key
-  # alpha_vantage:
-  #   enabled: true
-  #   transport: streamable_http
-  #   url: "https://mcp.alphavantage.co/mcp"
-  #   env:
-  #     ALPHAVANTAGE_API_KEY: "${ALPHAVANTAGE_API_KEY}"
+  alpha_vantage:
+    enabled: true
+    transport: streamable_http
+    url: "https://mcp.alphavantage.co/mcp"
+    env:
+      ALPHAVANTAGE_API_KEY: "${ALPHAVANTAGE_API_KEY}"
 
-  # Financial Datasets（本地 STDIO MCP）
+  brave_search:
+    enabled: true
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-brave-search"]
+    transport: stdio
+    env:
+      BRAVE_API_KEY: "${BRAVE_API_KEY}"
+
   # financial_datasets:
   #   enabled: true
   #   command: python
@@ -17,13 +22,3 @@ mcp_servers:
   #   transport: stdio
   #   env:
   #     FINANCIAL_DATASETS_API_KEY: "${FINANCIAL_DATASETS_API_KEY}"
-
-  # Brave Search（远程 MCP）
-  # 注册免费 API Key: https://api-dashboard.search.brave.com
-  # brave_search:
-  #   enabled: true
-  #   command: npx
-  #   args: ["-y", "@modelcontextprotocol/server-brave-search"]
-  #   transport: stdio
-  #   env:
-  #     BRAVE_API_KEY: "${BRAVE_API_KEY}"

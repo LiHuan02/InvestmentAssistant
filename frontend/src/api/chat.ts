@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { ChatMessage, QuickCommand, ToolCall } from '../types/chat';
+import type { ChatMessage, QuickCommand } from '../types/chat';
 
 export async function fetchCommands(): Promise<QuickCommand[]> {
   const res = await apiClient.get('/chat/commands');
@@ -7,6 +7,8 @@ export async function fetchCommands(): Promise<QuickCommand[]> {
 }
 
 interface StreamCallbacks {
+  conversationId: string | null;
+  onConversationId: (id: string) => void;
   onToken: (token: string) => void;
   onToolStart: (name: string, input: string) => void;
   onToolEnd: (name: string, output: string) => void;
@@ -22,7 +24,11 @@ export async function sendMessageStream(
   const response = await fetch('/api/v1/chat/message', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({
+      message,
+      history,
+      conversation_id: callbacks.conversationId,
+    }),
   });
 
   if (!response.ok) {
@@ -56,7 +62,9 @@ export async function sendMessageStream(
       }
       try {
         const parsed = JSON.parse(raw);
-        if (parsed.token) {
+        if (parsed.conversation_id) {
+          callbacks.onConversationId(parsed.conversation_id);
+        } else if (parsed.token) {
           callbacks.onToken(parsed.token);
         } else if (parsed.tool_start) {
           callbacks.onToolStart(parsed.tool_start.name, parsed.tool_start.input);

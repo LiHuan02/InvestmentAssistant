@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Row, Col, Typography, Spin, Empty } from 'antd';
+import { Row, Col, Typography, Spin, Empty, Tag } from 'antd';
 import { useMarketData } from '../../hooks/useMarketData';
 import IndexCard from './IndexCard';
 import ChartModal from './ChartModal';
@@ -9,7 +9,7 @@ const { Title } = Typography;
 const REGION_ORDER = ['A股', '港股', '美股', '日股', '韩股', '欧洲', '大宗商品'];
 
 export default function MarketDashboard() {
-  const { indices, isLoading } = useMarketData();
+  const { indices, marketStatus, isLoading } = useMarketData();
   const [chartSymbol, setChartSymbol] = useState<string | null>(null);
 
   if (isLoading) {
@@ -30,20 +30,30 @@ export default function MarketDashboard() {
 
   return (
     <div>
-      {regions.map(([region, regionIndices]) => (
-        <div key={region} style={{ marginBottom: '24px' }}>
-          <Title level={5} style={{ marginBottom: '12px', color: '#666' }}>
-            {region}
-          </Title>
-          <Row gutter={[12, 12]}>
-            {regionIndices.map((idx) => (
-              <Col xs={24} sm={12} md={8} lg={6} key={idx.symbol}>
-                <IndexCard data={idx} onClick={setChartSymbol} />
-              </Col>
-            ))}
-          </Row>
-        </div>
-      ))}
+      {regions.map(([region, regionIndices]) => {
+        const isOpen = marketStatus?.markets?.[region] ?? true;
+        return (
+          <div key={region} style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <Title level={5} style={{ margin: 0, color: '#666' }}>
+                {region}
+              </Title>
+              {isOpen ? (
+                <Tag color="success" style={{ fontSize: 11, lineHeight: '16px' }}>交易中</Tag>
+              ) : (
+                <Tag color="default" style={{ fontSize: 11, lineHeight: '16px' }}>休市</Tag>
+              )}
+            </div>
+            <Row gutter={[12, 12]}>
+              {regionIndices.map((idx) => (
+                <Col xs={24} sm={12} md={8} lg={6} key={idx.symbol}>
+                  <IndexCard data={idx} onClick={setChartSymbol} dimmed={!isOpen} />
+                </Col>
+              ))}
+            </Row>
+          </div>
+        );
+      })}
       <ChartModal
         symbol={chartSymbol}
         onClose={() => setChartSymbol(null)}

@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { IndexData, KlineData } from '../types/market';
+import type { IndexData, KlineData, MarketStatus } from '../types/market';
 
 export async function fetchIndices(): Promise<Record<string, IndexData[]>> {
   const res = await apiClient.get('/market/indices');
@@ -23,5 +23,10 @@ export async function getMarketSettings(): Promise<any> {
 
 export async function updateMarketSettings(payload: Record<string, unknown>): Promise<any> {
   const res = await apiClient.post('/market/settings', payload);
+  return res.data;
+}
+
+export async function fetchMarketStatus(): Promise<MarketStatus> {
+  const res = await apiClient.get('/market/status');
   return res.data;
 }

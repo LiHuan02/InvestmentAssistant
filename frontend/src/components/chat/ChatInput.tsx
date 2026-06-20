@@ -1,30 +1,31 @@
-import { useState } from 'react';
+import { type RefObject } from 'react';
 import { Input, Button } from 'antd';
 import { SendOutlined } from '@ant-design/icons';
 
 const { TextArea } = Input;
 
 interface ChatInputProps {
+  value: string;
   onSend: (message: string) => void;
+  onChange: (value: string) => void;
   disabled?: boolean;
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
 }
 
-export default function ChatInput({ onSend, disabled }: ChatInputProps) {
-  const [value, setValue] = useState('');
-
+export default function ChatInput({ value, onSend, onChange, disabled, inputRef }: ChatInputProps) {
   const handleSend = () => {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
     onSend(trimmed);
-    setValue('');
   };
 
   return (
-    <div style={{ display: 'flex', gap: 8 }}>
+    <div style={{ display: 'flex', gap: 8, padding: '12px 0' }}>
       <TextArea
+        ref={inputRef}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="输入市场分析、投资建议等相关问题..."
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="输入问题，或输入 / 查看命令..."
         autoSize={{ minRows: 1, maxRows: 4 }}
         onPressEnter={(e) => {
           if (!e.shiftKey) {

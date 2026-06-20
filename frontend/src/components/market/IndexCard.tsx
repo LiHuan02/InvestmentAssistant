@@ -8,9 +8,10 @@ import SparklineChart from './SparklineChart';
 interface IndexCardProps {
   data: IndexData;
   onClick?: (symbol: string) => void;
+  dimmed?: boolean;
 }
 
-export default function IndexCard({ data, onClick }: IndexCardProps) {
+export default function IndexCard({ data, onClick, dimmed }: IndexCardProps) {
   const { getColor } = useColor();
   const [showAlt, setShowAlt] = useState(false);
   const isPositive = data.change >= 0;
@@ -25,7 +26,7 @@ export default function IndexCard({ data, onClick }: IndexCardProps) {
       <Card
         size="small"
         hoverable
-        style={{ borderRadius: '8px', cursor: 'pointer' }}
+        style={{ borderRadius: '8px', cursor: 'pointer', opacity: dimmed ? 0.6 : 1 }}
         styles={{ body: { padding: '12px 16px' } }}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest('.unit-toggle')) return;

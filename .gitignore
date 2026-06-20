@@ -11,3 +11,6 @@ frontend/dist/
 *.log
 .pytest_cache/
 .ruff_cache/
+data/
+tmp_*.json
+None/

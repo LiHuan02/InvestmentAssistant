@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import get_settings
 from backend.core.scheduler import create_scheduler
-from backend.routers import chat, market, news, ws
+from backend.routers import chat, history, market, news, ws
 from backend.services.chat_service import ChatService
 from backend.services.market_service import MarketDataService
 from backend.services.news_service import NewsService
@@ -69,6 +69,7 @@ app.add_middleware(
 app.include_router(market.router)
 app.include_router(news.router)
 app.include_router(chat.router)
+app.include_router(history.router)
 app.include_router(ws.router)
 
 
