@@ -120,6 +120,9 @@ jobs:
   # ── Android APK build (Capacitor + Chaquopy) ──
   android:
     runs-on: ubuntu-latest
+    env:
+      # 在这里预先计算 secret 是否存在，结果会是字符串 'true' 或 'false'
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -177,7 +180,7 @@ jobs:
           ./gradlew assembleRelease --no-daemon
 
       - name: Sign APK (if keystore available)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: env.HAS_KEYSTORE == 'true'
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -197,7 +200,7 @@ jobs:
           fi
 
       - name: Rename unsigned APK (fallback)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        if: env.HAS_KEYSTORE == 'true'
         run: |
           APK_PATH="frontend/android/app/build/outputs/apk/release/app-release-unsigned.apk"
           if [ -f "$APK_PATH" ]; then
