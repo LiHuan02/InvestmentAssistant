@@ -1,6 +1,6 @@
 {
-  "productName": "Investment Assistant",
-  "version": "0.1.0",
+  "productName": "InvestmentAssistant",
+  "version": "1.0.0",
   "identifier": "com.investment.assistant",
   "build": {
     "frontendDist": "../frontend/dist",

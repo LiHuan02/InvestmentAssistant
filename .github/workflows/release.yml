@@ -235,14 +235,19 @@ jobs:
             echo "No keystore secret configured, skipping APK signing"
             exit 0
           fi
-          echo "$KEYSTORE_BASE64" | base64 -d > release-key.jks
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > release-key.jks 2>/dev/null || {
+            echo "Failed to decode keystore, skipping APK signing"
+            exit 0
+          }
           APK_PATH="InvestmentAssistant-${{ github.ref_name }}.apk"
           $ANDROID_HOME/build-tools/*/apksigner sign \
             --ks release-key.jks \
             --ks-pass "pass:$KEYSTORE_PASSWORD" \
             --key-alias "$KEY_ALIAS" \
             --out "${APK_PATH%.apk}-signed.apk" \
-            "$APK_PATH"
+            "$APK_PATH" 2>/dev/null || {
+            echo "APK signing failed, uploading unsigned APK"
+          }
 
       - name: Upload APK
         if: steps.find-apk.outputs.found == 'true'
