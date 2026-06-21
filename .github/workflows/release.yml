@@ -224,31 +224,6 @@ jobs:
             echo "found=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Sign APK
-        if: steps.find-apk.outputs.found == 'true'
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "No keystore secret configured, skipping APK signing"
-            exit 0
-          fi
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > release-key.jks 2>/dev/null || {
-            echo "Failed to decode keystore, skipping APK signing"
-            exit 0
-          }
-          APK_PATH="InvestmentAssistant-${{ github.ref_name }}.apk"
-          $ANDROID_HOME/build-tools/*/apksigner sign \
-            --ks release-key.jks \
-            --ks-pass "pass:$KEYSTORE_PASSWORD" \
-            --key-alias "$KEY_ALIAS" \
-            --out "${APK_PATH%.apk}-signed.apk" \
-            "$APK_PATH" 2>/dev/null || {
-            echo "APK signing failed, uploading unsigned APK"
-          }
-
       - name: Upload APK
         if: steps.find-apk.outputs.found == 'true'
         uses: softprops/action-gh-release@v2
