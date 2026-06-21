@@ -1,18 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::process::Command;
 use std::thread;
 use std::time::Duration;
+use tauri_plugin_shell::ShellExt;
 
-fn wait_for_backend(url: &str, max_retries: u32) -> bool {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .unwrap();
-
+fn wait_for_backend(max_retries: u32) -> bool {
     for i in 0..max_retries {
         thread::sleep(Duration::from_secs(1));
-        match client.get(url).send() {
+        match reqwest::blocking::get("http://localhost:8000/api/v1/health") {
             Ok(resp) if resp.status().is_success() => {
                 println!("[Tauri] Backend ready after {}s", i + 1);
                 return true;
@@ -29,32 +24,23 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let handle = app.handle().clone();
+            let shell = app.shell();
 
-            // Spawn sidecar
-            let sidecar = handle.shell().sidecar("investment-backend");
-            match sidecar {
+            match shell.sidecar("investment-backend") {
                 Ok(cmd) => {
                     match cmd.spawn() {
-                        Ok((_rx, child)) => {
-                            println!("[Tauri] Sidecar started (pid: {:?})", child.pid());
-
-                            // Wait for backend health in a separate thread
-                            let health_url = "http://localhost:8000/api/v1/health".to_string();
-                            thread::spawn(move || {
-                                if !wait_for_backend(&health_url, 30) {
-                                    eprintln!("[Tauri] Backend failed to start within 30s");
+                        Ok((_rx, _child)) => {
+                            println!("[Tauri] Sidecar spawned");
+                            thread::spawn(|| {
+                                if !wait_for_backend(60) {
+                                    eprintln!("[Tauri] Backend failed to start");
                                 }
                             });
                         }
-                        Err(e) => {
-                            eprintln!("[Tauri] Failed to spawn sidecar: {}", e);
-                        }
+                        Err(e) => eprintln!("[Tauri] Spawn failed: {}", e),
                     }
                 }
-                Err(e) => {
-                    eprintln!("[Tauri] Sidecar not found: {}", e);
-                }
+                Err(e) => eprintln!("[Tauri] Sidecar not found: {}", e),
             }
 
             Ok(())
