@@ -29,15 +29,32 @@ fn main() {
             match shell.sidecar("investment-backend") {
                 Ok(cmd) => {
                     match cmd.spawn() {
-                        Ok((_rx, _child)) => {
-                            println!("[Tauri] Sidecar spawned");
-                            thread::spawn(|| {
+                        Ok((_rx, mut child)) => {
+                            println!("[Tauri] Sidecar spawned, PID: {:?}", child.id());
+
+                            // Monitor sidecar process
+                            std::thread::spawn(move || {
+                                let status = child.wait();
+                                match status {
+                                    Ok(exit_status) => {
+                                        if !exit_status.success() {
+                                            eprintln!("[Tauri] Sidecar exited with: {}", exit_status);
+                                        }
+                                    }
+                                    Err(e) => eprintln!("[Tauri] Sidecar wait error: {}", e),
+                                }
+                            });
+
+                            // Poll for backend readiness
+                            std::thread::spawn(|| {
                                 if !wait_for_backend(60) {
-                                    eprintln!("[Tauri] Backend failed to start");
+                                    eprintln!("[Tauri] Backend failed to start within 60 seconds");
                                 }
                             });
                         }
-                        Err(e) => eprintln!("[Tauri] Spawn failed: {}", e),
+                        Err(e) => {
+                            eprintln!("[Tauri] Spawn failed: {}", e);
+                        }
                     }
                 }
                 Err(e) => eprintln!("[Tauri] Sidecar not found: {}", e),

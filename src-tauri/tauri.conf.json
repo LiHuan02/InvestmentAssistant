@@ -4,8 +4,8 @@
   "identifier": "com.investment.assistant",
   "build": {
     "frontendDist": "../frontend/dist",
-    "beforeBuildCommand": "",
-    "beforeDevCommand": "cd ../frontend && npx vite"
+    "beforeDevCommand": "cd ../frontend && npx vite",
+    "beforeBuildCommand": "cd ../frontend && npm run build"
   },
   "app": {
     "windows": [
@@ -19,7 +19,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:8000 ws://localhost:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;"
     }
   },
   "bundle": {

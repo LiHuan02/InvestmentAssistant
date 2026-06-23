@@ -205,21 +205,22 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('frontend/android/**/*.gradle') }}
+          key: gradle-${{ hashFiles('frontend/android/**/*.gradle', 'frontend/android/**/*.gradle.*') }}
 
-      - name: Build APK
+      - name: Build Debug APK
         run: |
           cd frontend/android
           chmod +x ./gradlew 2>/dev/null || true
-          ./gradlew assembleRelease --no-daemon || ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon
 
       - name: Find APK
         id: find-apk
         run: |
-          APK=$(find frontend/android/app/build/outputs -name "*.apk" | head -1)
+          APK=$(find frontend/android/app/build/outputs -name "*-debug.apk" | head -1)
           if [ -n "$APK" ]; then
             cp "$APK" "InvestmentAssistant-${{ github.ref_name }}.apk"
             echo "found=true" >> $GITHUB_OUTPUT
+            echo "apk=$APK" >> $GITHUB_OUTPUT
           else
             echo "found=false" >> $GITHUB_OUTPUT
           fi
