@@ -4,8 +4,8 @@
   "identifier": "com.investment.assistant",
   "build": {
     "frontendDist": "../frontend/dist",
-    "beforeDevCommand": "cd ../frontend && npx vite",
-    "beforeBuildCommand": "cd ../frontend && npm run build"
+    "beforeDevCommand": "cd ../frontend && npm run dev",
+    "beforeBuildCommand": ""
   },
   "app": {
     "windows": [
