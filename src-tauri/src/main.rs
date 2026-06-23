@@ -29,21 +29,8 @@ fn main() {
             match shell.sidecar("investment-backend") {
                 Ok(cmd) => {
                     match cmd.spawn() {
-                        Ok((_rx, mut child)) => {
-                            println!("[Tauri] Sidecar spawned, PID: {:?}", child.id());
-
-                            // Monitor sidecar process
-                            std::thread::spawn(move || {
-                                let status = child.wait();
-                                match status {
-                                    Ok(exit_status) => {
-                                        if !exit_status.success() {
-                                            eprintln!("[Tauri] Sidecar exited with: {}", exit_status);
-                                        }
-                                    }
-                                    Err(e) => eprintln!("[Tauri] Sidecar wait error: {}", e),
-                                }
-                            });
+                        Ok((_rx, _child)) => {
+                            println!("[Tauri] Sidecar spawned, PID: {:?}", _child.pid());
 
                             // Poll for backend readiness
                             std::thread::spawn(|| {
