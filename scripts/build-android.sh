@@ -20,13 +20,18 @@ npm run build
 echo "[2/4] Syncing Capacitor..."
 npx cap sync android
 
-# Step 3: Copy backend Python source files
-echo "[3/4] Copying backend Python sources..."
-BACKEND_SRC="$ANDROID_DIR/app/src/main/python/backend"
-mkdir -p "$BACKEND_SRC"
-cp -r "$PROJECT_ROOT/backend/"* "$BACKEND_SRC/" 2>/dev/null || true
-# Copy android_server.py
-cp "$PROJECT_ROOT/android_server.py" "$ANDROID_DIR/app/src/main/python/"
+# Step 3: Copy the Android-only Python source files.
+# Do not copy backend/: it pulls in FastAPI/LangChain/Chroma and is not
+# compatible with the lightweight Chaquopy dependency set.
+echo "[3/4] Copying Android Python sources..."
+PYTHON_SRC="$ANDROID_DIR/app/src/main/python"
+rm -rf "$PYTHON_SRC"
+mkdir -p "$PYTHON_SRC/android_backend" "$PYTHON_SRC/frontend"
+cp "$PROJECT_ROOT/android_server.py" "$PYTHON_SRC/"
+cp "$PROJECT_ROOT/android_backend/"*.py "$PYTHON_SRC/android_backend/"
+# The WebView is configured to load the local Python server, so the frontend
+# assets must be available beside android_server.py inside the APK as well.
+cp -r "$FRONTEND_DIR/dist" "$PYTHON_SRC/frontend/"
 
 # Step 4: Build APK with Gradle
 echo "[4/4] Building APK..."

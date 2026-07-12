@@ -1,6 +1,10 @@
 import asyncio
 import logging
+import os
+import socket
 from contextlib import asynccontextmanager
+
+import uvicorn
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -78,3 +82,23 @@ app.include_router(ws.router)
 @app.get("/api/v1/health")
 async def health_check():
     return {"status": "ok", "version": "0.1.0"}
+
+
+def _port_is_available(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex((host, port)) != 0
+
+
+def run_server() -> None:
+    """Run Uvicorn when launched as a PyInstaller sidecar."""
+    host = os.getenv("HOST", settings.host)
+    port = int(os.getenv("PORT", str(settings.port)))
+    if not _port_is_available("127.0.0.1", port):
+        logger.error("Port %s is already in use", port)
+        return
+    uvicorn.run(app, host=host, port=port, log_level="info", log_config=None)
+
+
+if __name__ == "__main__":
+    run_server()

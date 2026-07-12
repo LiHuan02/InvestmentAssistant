@@ -22,8 +22,14 @@ if [ -z "$TARGET" ]; then
 fi
 
 mkdir -p "$TAURI_BINARIES"
+OUTPUT="$BACKEND_DIR/dist/investment-backend"
+if [ ! -f "$OUTPUT" ]; then
+    echo "ERROR: PyInstaller output not found: $OUTPUT"
+    exit 1
+fi
+
 DEST="$TAURI_BINARIES/investment-backend-$TARGET"
-cp dist/investment-backend/investment-backend "$DEST"
+cp "$OUTPUT" "$DEST"
 chmod +x "$DEST"
 echo "Sidecar: $DEST"
 echo "=== Done ==="

@@ -7,12 +7,13 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel
 
 from backend.config import get_settings
+from backend.runtime_paths import env_file
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
-ENV_FILE = Path(".env")
+ENV_FILE = env_file()
 
 
 def _mask_key(key: str) -> str:

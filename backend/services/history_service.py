@@ -5,9 +5,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from backend.runtime_paths import runtime_file
+
 logger = logging.getLogger(__name__)
 
-DB_FILE = "data/conversations.db"
+DB_FILE = runtime_file("data/conversations.db")
 
 
 def _get_conn() -> sqlite3.Connection:

@@ -11,8 +11,9 @@ import asyncio
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-# Add project root to path
-APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Chaquopy places this module and the android_backend package in the same
+# Python source directory inside the APK.
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
 
@@ -35,6 +36,8 @@ def _load_config() -> dict:
         "news_refresh_interval": 300,
     }
     env_file = os.path.join(APP_DIR, ".env")
+    if not os.path.exists(env_file):
+        env_file = os.path.join(os.path.dirname(APP_DIR), ".env")
     if os.path.exists(env_file):
         with open(env_file, encoding="utf-8") as f:
             for line in f:
@@ -323,6 +326,8 @@ def run_server(port: int = 8000):
     dist_dir = os.path.join(APP_DIR, "frontend", "dist")
     if not os.path.isdir(dist_dir):
         dist_dir = os.path.join(APP_DIR, "dist")
+    if not os.path.isdir(dist_dir):
+        dist_dir = os.path.join(os.path.dirname(APP_DIR), "frontend", "dist")
     if not os.path.isdir(dist_dir):
         dist_dir = APP_DIR  # fallback
 

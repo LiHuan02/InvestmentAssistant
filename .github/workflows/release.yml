@@ -80,13 +80,15 @@ jobs:
           npm run build
 
       # ── Build Python sidecar ──
+      # The spec is a one-file build. Tauri externalBin must receive the
+      # complete executable, not the old onedir launcher.
       - name: Build sidecar (Unix)
         if: runner.os != 'Windows'
         run: |
           cd backend
           uv run pyinstaller investment-backend.spec --clean --noconfirm
           mkdir -p ../src-tauri/binaries
-          cp dist/investment-backend/investment-backend "../src-tauri/binaries/${{ matrix.sidecar-name }}"
+          cp dist/investment-backend "../src-tauri/binaries/${{ matrix.sidecar-name }}"
           chmod +x "../src-tauri/binaries/${{ matrix.sidecar-name }}"
 
       - name: Build sidecar (Windows)
@@ -96,7 +98,7 @@ jobs:
           cd backend
           uv run pyinstaller investment-backend.spec --clean --noconfirm
           New-Item -ItemType Directory -Force -Path ../src-tauri/binaries | Out-Null
-          Copy-Item "dist/investment-backend/investment-backend.exe" "../src-tauri/binaries/${{ matrix.sidecar-name }}"
+          Copy-Item "dist/investment-backend.exe" "../src-tauri/binaries/${{ matrix.sidecar-name }}"
 
       # ── macOS icon ──
       - name: Generate macOS icon
@@ -134,11 +136,11 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
             src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
             src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
-          if-no-files-found: warn
+          if-no-files-found: error
 
   # ── Create Release ──
   release:
-    needs: desktop
+    needs: [desktop, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -192,9 +194,11 @@ jobs:
       - name: Copy Android server
         run: |
           DEST=frontend/android/app/src/main/python
-          mkdir -p "$DEST/android_backend"
+          rm -rf "$DEST"
+          mkdir -p "$DEST/android_backend" "$DEST/frontend"
           cp android_server.py "$DEST/"
-          cp -r android_backend/* "$DEST/android_backend/"
+          cp android_backend/*.py "$DEST/android_backend/"
+          cp -r frontend/dist "$DEST/frontend/"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3

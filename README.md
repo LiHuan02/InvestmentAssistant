@@ -91,6 +91,8 @@
 
 #### 安装与启动
 
+开发模式会自动读取项目根目录的 `.env`，不会进入发布版首次配置向导。发布版则使用用户数据目录中的独立配置文件。
+
 ```bash
 # 1. 克隆项目
 git clone <repo-url>
@@ -101,7 +103,10 @@ uv sync                          # Python 后端依赖
 cd frontend && npm install       # 前端依赖
 cd ..
 
-# 3. 启动（一条命令同时启动前后端）
+# 3. 准备本地配置（从模板复制后填写）
+cp .env.example .env
+
+# 4. 启动（一条命令同时启动前后端）
 cd frontend && npm run dev
 ```
 

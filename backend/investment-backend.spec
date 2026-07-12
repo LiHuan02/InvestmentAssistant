@@ -7,7 +7,6 @@ Usage:
     uv run pyinstaller investment-backend.spec
 """
 
-import sys
 from pathlib import Path
 
 block_cipher = None
@@ -87,11 +86,14 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# Build a single executable. Tauri externalBin embeds one file, so an onedir
+# build would fail after the launcher is copied without its _internal folder.
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='investment-backend',
     debug=False,
     bootloader_ignore_signals=False,
@@ -103,14 +105,4 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='investment-backend',
 )

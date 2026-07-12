@@ -5,7 +5,7 @@
   "build": {
     "frontendDist": "../frontend/dist",
     "beforeDevCommand": "cd ../frontend && npm run dev",
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "cd ../frontend && npm run build"
   },
   "app": {
     "windows": [
@@ -19,7 +19,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:8000 ws://localhost:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;"
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8000 ws://127.0.0.1:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;"
     }
   },
   "bundle": {
@@ -34,6 +34,10 @@
     ],
     "externalBin": [
       "binaries/investment-backend"
+    ],
+    "resources": [
+      "../.env.example",
+      "../backend/mcp_config.yaml"
     ]
   },
   "plugins": {

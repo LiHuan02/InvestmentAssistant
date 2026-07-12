@@ -11,6 +11,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
 from backend.config import Settings
+from backend.runtime_paths import mcp_config_file
 from backend.models.chat import ChatMessage, QuickCommand
 from backend.services.agent_tools import (
     get_builtin_tools,
@@ -41,7 +42,7 @@ BASE_SYSTEM_PROMPT = """你是一位专业的投资顾问AI助手，具备以下
 - 使用中文回复，格式清晰，善用表格和列表
 - 使用 Markdown 格式组织回复内容"""
 
-MCP_CONFIG_PATH = str(Path(__file__).parent.parent / "mcp_config.yaml")
+MCP_CONFIG_PATH = str(mcp_config_file())
 
 
 @tool
@@ -91,7 +92,7 @@ class ChatService:
 
         global _rag_service
         _rag_service = ChromaRAGService(
-            persist_dir=str(Path(settings.rag_persist_dir)) if settings.rag_persist_dir else None
+            persist_dir=settings.resolved_rag_persist_dir or None
         )
 
         self._mcp_manager = MCPManager(MCP_CONFIG_PATH)

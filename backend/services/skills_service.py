@@ -2,9 +2,11 @@ import json
 import logging
 from pathlib import Path
 
+from backend.runtime_paths import runtime_file
+
 logger = logging.getLogger(__name__)
 
-SKILLS_FILE = "data/skills.json"
+SKILLS_FILE = runtime_file("data/skills.json")
 
 
 def _ensure_dir():

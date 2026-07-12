@@ -4,10 +4,12 @@ from typing import Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
+from backend.runtime_paths import env_file, resolve_runtime_path
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=env_file(),
         env_prefix="",
         case_sensitive=False,
         extra="ignore",
@@ -31,6 +33,10 @@ class Settings(BaseSettings):
     news_refresh_interval: int = 300
 
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    @property
+    def resolved_rag_persist_dir(self) -> str:
+        return resolve_runtime_path(self.rag_persist_dir) if self.rag_persist_dir else ""
 
     @classmethod
     def settings_customise_sources(
