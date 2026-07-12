@@ -10,9 +10,9 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', width: '100%', minWidth: 0, overflow: 'hidden' }}>
       <Sidebar collapsed={collapsed} onCollapse={setCollapsed} />
-      <Layout>
+      <Layout style={{ minWidth: 0, width: '100%', height: '100vh', overflow: 'hidden' }}>
         <Header />
         <Content
           style={{
@@ -20,6 +20,8 @@ export default function AppLayout() {
             padding: '24px',
             background: '#fff',
             borderRadius: '8px',
+            minWidth: 0,
+            minHeight: 0,
             overflow: 'auto',
           }}
         >

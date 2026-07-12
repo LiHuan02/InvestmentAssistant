@@ -19,7 +19,7 @@ export default function ChatInput({ value, onSend, onChange, disabled, inputRef 
   };
 
   return (
-    <div style={{ display: 'flex', gap: 8, padding: '12px 0' }}>
+    <div className="chat-input" style={{ display: 'flex', gap: 8, padding: '12px 0', minWidth: 0 }}>
       <TextArea
         ref={inputRef}
         value={value}
@@ -33,7 +33,7 @@ export default function ChatInput({ value, onSend, onChange, disabled, inputRef 
           }
         }}
         disabled={disabled}
-        style={{ borderRadius: '8px' }}
+        style={{ borderRadius: '8px', minWidth: 0, flex: 1 }}
       />
       <Button
         type="primary"

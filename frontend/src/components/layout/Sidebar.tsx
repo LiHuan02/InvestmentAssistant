@@ -26,7 +26,15 @@ export default function Sidebar({ collapsed, onCollapse }: SidebarProps) {
   const location = useLocation();
 
   return (
-    <Sider collapsible collapsed={collapsed} onCollapse={onCollapse} theme="dark">
+    <Sider
+      collapsible
+      collapsed={collapsed}
+      onCollapse={onCollapse}
+      theme="dark"
+      breakpoint="md"
+      collapsedWidth={0}
+      onBreakpoint={(broken) => onCollapse(broken)}
+    >
       <div
         style={{
           height: '64px',

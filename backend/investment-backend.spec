@@ -9,21 +9,39 @@ Usage:
 
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_all, collect_submodules
+
 block_cipher = None
 backend_dir = Path(SPECPATH)
 project_root = backend_dir.parent
 
+uvicorn_datas, uvicorn_binaries, uvicorn_hidden = collect_all("uvicorn")
+fastapi_hidden = collect_submodules("fastapi")
+
+# PyInstaller can miss Uvicorn's dynamically imported protocol modules. Add
+# the complete package explicitly so the frozen sidecar can start on Windows.
 a = Analysis(
     ['launcher.py'],
     pathex=[str(backend_dir), str(project_root)],
-    binaries=[],
+    binaries=uvicorn_binaries,
     datas=[
         (str(backend_dir / 'mcp_config.yaml'), '.'),
         (str(project_root / '.env.example'), '.'),
+        *uvicorn_datas,
     ],
     hiddenimports=[
         # FastAPI / Uvicorn
         'uvicorn',
+        'uvicorn.main',
+        'uvicorn.config',
+        'uvicorn.server',
+        'uvicorn.supervisors',
+        'uvicorn.supervisors.basereload',
+        'uvicorn.supervisors.watchfilesreload',
+        'uvicorn.workers',
+        'uvicorn.middleware',
+        'uvicorn.middleware.proxy_headers',
+        'uvicorn.middleware.wsgi',
         'uvicorn.logging',
         'uvicorn.loops',
         'uvicorn.loops.auto',
@@ -36,6 +54,10 @@ a = Analysis(
         'uvicorn.lifespan.on',
         'websockets',
         'httptools',
+        'h11',
+        'click',
+        *uvicorn_hidden,
+        *fastapi_hidden,
 
         # LangChain ecosystem
         'langchain',

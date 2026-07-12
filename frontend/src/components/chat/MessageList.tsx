@@ -28,10 +28,13 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
     <div
       style={{
         flex: 1,
-        overflow: 'auto',
+        minHeight: 0,
+        minWidth: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
         padding: '16px 0',
-        minHeight: '300px',
-        maxHeight: '60vh',
+        maxHeight: 'none',
+        overflowWrap: 'anywhere',
       }}
     >
       {messages.map((msg, index) => (

@@ -57,7 +57,9 @@ export default function ConversationSidebar({
 
   return (
     <div style={{
-      width: 240,
+      width: 'min(240px, 42vw)',
+      minWidth: 0,
+      flexShrink: 1,
       borderRight: '1px solid #f0f0f0',
       display: 'flex',
       flexDirection: 'column',

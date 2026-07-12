@@ -19,7 +19,9 @@ export default function ChatPanel() {
     conversationId, refreshKey,
     loadConversation, newConversation,
   } = useChat();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window === 'undefined' || window.innerWidth > 768
+  );
   const [inputValue, setInputValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -238,7 +240,7 @@ export default function ChatPanel() {
   const hasAssistantMsg = messages.some((m) => m.role === 'assistant' && m.content);
 
   return (
-    <div style={{ display: 'flex', height: '100%', gap: 0 }}>
+    <div className="chat-panel" style={{ display: 'flex', height: '100%', minHeight: 0, minWidth: 0, gap: 0 }}>
       {sidebarOpen && (
         <ConversationSidebar
           currentId={conversationId}
@@ -248,7 +250,7 @@ export default function ChatPanel() {
         />
       )}
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '0 16px' }}>
+      <div className="chat-main" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, padding: '0 16px' }}>
         {/* Header */}
         <div style={{
           display: 'flex', justifyContent: 'space-between',

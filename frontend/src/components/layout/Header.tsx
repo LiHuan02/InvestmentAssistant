@@ -12,14 +12,15 @@ export default function Header() {
     <AntHeader
       style={{
         background: '#fff',
-        padding: '0 24px',
+        padding: '0 12px',
+        minWidth: 0,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         borderBottom: '1px solid #f0f0f0',
       }}
     >
-      <Text strong style={{ fontSize: '18px' }}>
+      <Text strong ellipsis style={{ fontSize: '18px', minWidth: 0 }}>
         市场投资助手
       </Text>
       <Space>
