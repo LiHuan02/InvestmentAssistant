@@ -127,6 +127,27 @@ jobs:
       # ── Build Tauri ──
       # The frontend is already built above. Tauri runs from src-tauri, so a
       # relative `cd ../frontend` in beforeBuildCommand is not valid in CI.
+      - name: Set release version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          version = os.environ["VERSION"]
+          path = Path("src-tauri/tauri.conf.json")
+          data = json.loads(path.read_text())
+          data["version"] = version
+          path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+          cargo_path = Path("src-tauri/Cargo.toml")
+          cargo_path.write_text(
+              cargo_path.read_text().replace(
+                  'version = "1.0.3"', f'version = "{version}"', 1
+              )
+          )
+          PY
+          grep -n '"version"' src-tauri/tauri.conf.json
+
       - name: Build Tauri app
         run: npx tauri build --target ${{ matrix.target }}
 
@@ -189,6 +210,14 @@ jobs:
           cd frontend
           npm ci
           npm run build
+
+      - name: Set Android release version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION_CODE=$(python -c "print(int('${VERSION//./}'))")
+          sed -i "s/versionCode .*/versionCode $VERSION_CODE/; s/versionName \".*\"/versionName \"$VERSION\"/" frontend/android/app/build.gradle
+          grep -nE 'versionCode|versionName' frontend/android/app/build.gradle
 
       - name: Sync Capacitor
         run: |
