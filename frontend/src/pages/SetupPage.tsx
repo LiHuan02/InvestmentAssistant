@@ -17,12 +17,7 @@ export default function SetupPage({ onReady }: SetupPageProps) {
 
   const checkSetup = async () => {
     try {
-      // Check localStorage first
-      if (localStorage.getItem('setup_complete') === 'true') {
-        onReady();
-        return;
-      }
-      // Check backend config
+      // The backend is the source of truth; localStorage alone is not durable.
       const settings: AppSettings = await getAppSettings();
       if (settings.configured) {
         localStorage.setItem('setup_complete', 'true');

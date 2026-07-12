@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { localBackendUrl, usesLocalBackend } from '../runtime';
+import apiClient from '../api/client';
+import { isAndroidRuntime, localBackendUrl, usesLocalBackend } from '../runtime';
 
 interface UseWebSocketOptions {
   onMessage?: (data: unknown) => void;
@@ -13,11 +14,20 @@ export function useWebSocket<T = unknown>(
 ) {
   const { onMessage, reconnectInterval = 1000, maxReconnectInterval = 30000 } = options;
   const [isConnected, setIsConnected] = useState(false);
+  const [isSupported, setIsSupported] = useState(!isAndroidRuntime());
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const attemptRef = useRef(0);
 
   const connect = useCallback(() => {
+    if (!isSupported) {
+      setIsConnected(false);
+      return;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = undefined;
+    }
     try {
       const wsUrl = usesLocalBackend()
         ? `${localBackendUrl.replace('http://', 'ws://')}${path}`
@@ -40,6 +50,7 @@ export function useWebSocket<T = unknown>(
 
       ws.onclose = () => {
         setIsConnected(false);
+        if (!isSupported) return;
         const delay = Math.min(
           reconnectInterval * Math.pow(2, attemptRef.current),
           maxReconnectInterval
@@ -52,7 +63,37 @@ export function useWebSocket<T = unknown>(
     } catch {
       // connection failed, will retry
     }
-  }, [path, onMessage, reconnectInterval, maxReconnectInterval]);
+  }, [path, onMessage, reconnectInterval, maxReconnectInterval, isSupported]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const prepare = async () => {
+      if (isAndroidRuntime()) {
+        try {
+          const res = await apiClient.get('/ws-status');
+          if (!cancelled) {
+            const supported = Boolean(res.data?.supported);
+            setIsSupported(supported);
+            if (!supported && wsRef.current) {
+              wsRef.current.close();
+              wsRef.current = null;
+            }
+          }
+        } catch {
+          if (!cancelled) {
+            setIsSupported(false);
+            setIsConnected(false);
+          }
+        }
+      }
+    };
+
+    prepare();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     connect();

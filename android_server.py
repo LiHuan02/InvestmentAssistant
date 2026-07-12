@@ -14,6 +14,7 @@ from urllib.parse import urlparse, parse_qs
 # Chaquopy places this module and the android_backend package in the same
 # Python source directory inside the APK.
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+_DATA_DIR = APP_DIR
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
 
@@ -23,8 +24,19 @@ from android_backend.chat import chat_stream, QUICK_COMMANDS, SYSTEM_PROMPT
 
 # ── Config ─────────────────────────────────────────────────
 
+def configure_data_dir(path: str) -> None:
+    """Set the writable Android app-private directory before server start."""
+    global _DATA_DIR
+    _DATA_DIR = path
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
+
+def _config_file() -> str:
+    return os.path.join(_DATA_DIR, ".env")
+
+
 def _load_config() -> dict:
-    """Load config from .env file."""
+    """Load config from the app-private .env file."""
     config = {
         "ai_api_key": "",
         "ai_base_url": "https://ollama.com/v1",
@@ -34,10 +46,9 @@ def _load_config() -> dict:
         "tavily_api_key": "",
         "market_refresh_interval": 60,
         "news_refresh_interval": 300,
+        "configured": False,
     }
-    env_file = os.path.join(APP_DIR, ".env")
-    if not os.path.exists(env_file):
-        env_file = os.path.join(os.path.dirname(APP_DIR), ".env")
+    env_file = _config_file()
     if os.path.exists(env_file):
         with open(env_file, encoding="utf-8") as f:
             for line in f:
@@ -48,7 +59,9 @@ def _load_config() -> dict:
                 key = key.strip().lower()
                 val = val.strip().strip('"').strip("'")
                 if key in config:
-                    if key in ("ai_max_tokens", "market_refresh_interval", "news_refresh_interval"):
+                    if key == "configured":
+                        config[key] = val.lower() in ("1", "true", "yes", "on")
+                    elif key in ("ai_max_tokens", "market_refresh_interval", "news_refresh_interval"):
                         config[key] = int(val)
                     elif key == "ai_temperature":
                         config[key] = float(val)
@@ -78,7 +91,7 @@ class AndroidHandler(SimpleHTTPRequestHandler):
         path = parsed.path
 
         if path == "/api/v1/health":
-            self._json({"status": "ok", "platform": "android"})
+            self._json({"status": "ok", "platform": "android", "ready": True})
         elif path == "/api/v1/market/indices":
             self._json(fetch_all_indices())
         elif path.startswith("/api/v1/market/kline/"):
@@ -104,6 +117,8 @@ class AndroidHandler(SimpleHTTPRequestHandler):
             self._json(self._get_skills())
         elif path == "/api/v1/settings":
             self._json(self._get_config_response())
+        elif path == "/api/v1/ws-status":
+            self._json({"supported": False, "mode": "polling"})
         elif path == "/api/v1/history":
             self._json(list(_conversations.keys()))
         elif path.startswith("/api/v1/history/"):
@@ -248,18 +263,35 @@ class AndroidHandler(SimpleHTTPRequestHandler):
             "rag_persist_dir": "",
             "market_refresh_interval": c.get("market_refresh_interval", 60),
             "news_refresh_interval": c.get("news_refresh_interval", 300),
-            "configured": bool(c.get("ai_api_key")),
+            "configured": bool(c.get("configured")),
         }
 
     def _update_config(self, body: dict):
         for key in ("ai_api_key", "ai_base_url", "ai_model", "tavily_api_key"):
             if key in body and body[key] is not None:
                 self.config[key] = body[key]
+        self.config["configured"] = bool(self.config.get("ai_base_url") and self.config.get("ai_model"))
         for key in ("ai_max_tokens", "market_refresh_interval", "news_refresh_interval"):
             if key in body and body[key] is not None:
                 self.config[key] = int(body[key])
         if "ai_temperature" in body and body["ai_temperature"] is not None:
             self.config["ai_temperature"] = float(body["ai_temperature"])
+        self._save_config()
+
+    def _save_config(self):
+        lines = [
+            f'{key.upper()}="{self.config.get(key, "")}"\n'
+            for key in (
+                "ai_api_key", "ai_base_url", "ai_model", "tavily_api_key",
+                "ai_max_tokens", "ai_temperature", "market_refresh_interval",
+                "news_refresh_interval", "configured",
+            )
+        ]
+        try:
+            with open(_config_file(), "w", encoding="utf-8") as f:
+                f.writelines(lines)
+        except OSError as e:
+            print(f"[Android] Failed to save config: {e}")
 
     def _test_connection(self, body: dict) -> dict:
         import httpx
@@ -343,7 +375,11 @@ def run_server(port: int = 8000):
     AndroidHandler.config = config
     AndroidHandler.dist_dir = dist_dir
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), AndroidHandler)
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", port), AndroidHandler)
+    except OSError as e:
+        print(f"[Android] Failed to bind port {port}: {e}")
+        raise
     print(f"[Android] Server started on http://127.0.0.1:{port}")
     print(f"[Android] Serving frontend: {dist_dir}")
     print(f"[Android] AI Model: {config.get('ai_model', 'unknown')}")

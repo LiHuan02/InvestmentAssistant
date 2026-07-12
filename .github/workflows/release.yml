@@ -235,6 +235,9 @@ jobs:
           cp android_backend/*.py "$DEST/android_backend/"
           cp -r frontend/dist "$DEST/frontend/"
           test -f "$DEST/android_server.py"
+          test -f "$DEST/android_backend/__init__.py"
+          test -f "$DEST/android_backend/market.py"
+          test -f "$DEST/android_backend/news.py"
           test -f "$DEST/android_backend/chat.py"
           test -f "$DEST/frontend/dist/index.html"
 

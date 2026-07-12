@@ -6,7 +6,7 @@ import {
   RocketOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
-import apiClient from '../api/client';
+import { waitForLocalBackend } from '../api/client';
 import { testConnection, updateAppSettings } from '../api/settings';
 import { isTauriRuntime, isAndroidRuntime } from '../runtime';
 
@@ -73,17 +73,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     setTestResult(null);
   };
 
-  const waitForBackend = async (attempts = 90): Promise<boolean> => {
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      try {
-        await apiClient.get('/health', { timeout: 1000 });
-        return true;
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
-    return false;
-  };
+  const waitForBackend = async () => waitForLocalBackend(120, 1000);
 
   const handleTest = async () => {
     setTesting(true);

@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { localBackendUrl, usesLocalBackend } from '../runtime';
 import type { ChatMessage, QuickCommand } from '../types/chat';
 
 export async function fetchCommands(): Promise<QuickCommand[]> {
@@ -21,7 +22,10 @@ export async function sendMessageStream(
   history: ChatMessage[],
   callbacks: StreamCallbacks
 ): Promise<void> {
-  const response = await fetch('/api/v1/chat/message', {
+  const endpoint = usesLocalBackend()
+    ? `${localBackendUrl}/api/v1/chat/message`
+    : '/api/v1/chat/message';
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

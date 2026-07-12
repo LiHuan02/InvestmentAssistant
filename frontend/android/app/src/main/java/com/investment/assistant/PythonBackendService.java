@@ -15,6 +15,7 @@ public final class PythonBackendService {
     private static volatile boolean isStarted = false;
     private static volatile boolean isReady = false;
     private static volatile String startupError;
+    private static volatile String dataDir;
     private static Thread serverThread;
 
     private PythonBackendService() {}
@@ -24,10 +25,15 @@ public final class PythonBackendService {
             if (isStarted || (serverThread != null && serverThread.isAlive())) return;
 
             try {
+                startupError = null;
+                isReady = false;
                 if (!Python.isStarted()) {
                     Python.start(new AndroidPlatform(context.getApplicationContext()));
                 }
                 verifyBundledModules();
+                PyObject pyModule = Python.getInstance().getModule("android_server");
+                dataDir = context.getFilesDir().getAbsolutePath();
+                pyModule.callAttr("configure_data_dir", dataDir);
                 serverThread = new Thread(() -> runPythonServer(), "investment-python-backend");
                 serverThread.setDaemon(true);
                 serverThread.start();
@@ -46,9 +52,13 @@ public final class PythonBackendService {
             PyObject pyModule = py.getModule("android_server");
             pyModule.callAttr("run_server", BACKEND_PORT);
             startupError = "Python server exited before becoming ready";
+            isStarted = false;
+            serverThread = null;
             Log.e(TAG, startupError);
         } catch (Exception e) {
             startupError = formatPythonError(e);
+            isStarted = false;
+            serverThread = null;
             Log.e(TAG, "Python backend failed: " + startupError, e);
         }
     }
@@ -71,6 +81,7 @@ public final class PythonBackendService {
             int code = conn.getResponseCode();
             conn.disconnect();
             isReady = code == 200;
+            if (isReady) startupError = null;
             return isReady;
         } catch (Exception e) {
             return false;
@@ -87,6 +98,10 @@ public final class PythonBackendService {
 
     public static int getPort() {
         return BACKEND_PORT;
+    }
+
+    public static String getDataDir() {
+        return dataDir;
     }
 
     private static void verifyBundledModules() {

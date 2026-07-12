@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchIndices, fetchMarketStatus } from '../api/market';
+import { isAndroidRuntime } from '../runtime';
 import { useWebSocket } from './useWebSocket';
 import type { IndexData } from '../types/market';
 
@@ -12,7 +13,7 @@ interface MarketWSMessage {
 export function useMarketData() {
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isSuccess: indicesReady } = useQuery({
     queryKey: ['market-indices'],
     queryFn: fetchIndices,
     refetchInterval: 60000,
@@ -40,11 +41,12 @@ export function useMarketData() {
   const ws = useWebSocket<MarketWSMessage>('/ws/market', {
     onMessage: onWSMessage,
   });
+  const isRealtime = !isAndroidRuntime() && ws.isConnected;
 
   return {
     indices: data || {},
     marketStatus: marketStatus || null,
     isLoading,
-    isWSConnected: ws.isConnected,
+    isWSConnected: isRealtime || (isAndroidRuntime() && indicesReady),
   };
 }

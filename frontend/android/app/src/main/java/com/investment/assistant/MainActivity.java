@@ -14,10 +14,10 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // Start before BridgeActivity loads the configured localhost URL.
+        // Wait for the embedded backend to become ready before the WebView loads.
         PythonBackendService.start(getApplicationContext());
-        super.onCreate(savedInstanceState);
         waitForBackend();
+        super.onCreate(savedInstanceState);
     }
 
     private void onBackendReady() {
@@ -47,7 +47,7 @@ public class MainActivity extends BridgeActivity {
         webView.loadData(
             "<html><body style='font-family:sans-serif;padding:20px;text-align:center'>" +
             "<h2>启动失败</h2>" +
-            "<p>后端服务未能在60秒内启动。</p>" +
+            "<p>后端服务未能在120秒内启动。</p>" +
             "<p>请检查应用权限后重试。</p>" +
             "<p style='color:#777;font-size:12px;word-break:break-all'>" + detail + "</p>" +
             "</body></html>",
