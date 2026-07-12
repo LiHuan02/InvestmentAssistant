@@ -6,7 +6,9 @@ import {
   RocketOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
+import apiClient from '../api/client';
 import { testConnection, updateAppSettings } from '../api/settings';
+import { isTauriRuntime, isAndroidRuntime } from '../runtime';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -71,14 +73,34 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     setTestResult(null);
   };
 
+  const waitForBackend = async (attempts = 90): Promise<boolean> => {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        await apiClient.get('/health', { timeout: 1000 });
+        return true;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+    return false;
+  };
+
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
     try {
+      if (isTauriRuntime() || isAndroidRuntime()) {
+        const backendReady = await waitForBackend();
+        if (!backendReady) {
+          setTestResult({ ok: false, message: '本地后端尚未启动，请稍后重试。' });
+          return;
+        }
+      }
       const result = await testConnection(apiKey, baseUrl, model);
       setTestResult(result);
-    } catch {
-      setTestResult({ ok: false, message: '网络错误，请重试' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知网络错误';
+      setTestResult({ ok: false, message: `请求本地后端失败：${message}` });
     } finally {
       setTesting(false);
     }
@@ -87,6 +109,13 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const handleSave = async () => {
     setSaving(true);
     try {
+      if (isTauriRuntime() || isAndroidRuntime()) {
+        const backendReady = await waitForBackend();
+        if (!backendReady) {
+          message.error('本地后端尚未启动，请稍后重试');
+          return;
+        }
+      }
       await updateAppSettings({
         ai_api_key: apiKey,
         ai_base_url: baseUrl,
@@ -96,8 +125,9 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       localStorage.setItem('setup_complete', 'true');
       message.success('配置已保存！');
       onComplete();
-    } catch {
-      message.error('保存失败');
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '未知网络错误';
+      message.error(`保存失败：${detail}`);
     } finally {
       setSaving(false);
     }

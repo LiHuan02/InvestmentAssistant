@@ -8,7 +8,7 @@ import com.getcapacitor.BridgeActivity;
 
 /** Starts the embedded backend before loading the Capacitor WebView. */
 public class MainActivity extends BridgeActivity {
-    private static final int MAX_RETRIES = 90;
+    private static final int MAX_RETRIES = 120;
     private int retryCount = 0;
     private final Handler handler = new Handler(Looper.getMainLooper());
 

@@ -10,6 +10,7 @@ import com.chaquo.python.android.AndroidPlatform;
 public final class PythonBackendService {
     private static final String TAG = "PythonBackend";
     private static final int BACKEND_PORT = 8000;
+    private static final int MAX_STARTUP_RETRIES = 120;
     private static final Object LOCK = new Object();
     private static volatile boolean isStarted = false;
     private static volatile boolean isReady = false;
@@ -78,6 +79,10 @@ public final class PythonBackendService {
 
     public static String getStartupError() {
         return startupError;
+    }
+
+    public static boolean isStarted() {
+        return isStarted;
     }
 
     public static int getPort() {
