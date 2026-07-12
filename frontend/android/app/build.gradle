@@ -21,7 +21,8 @@ android {
             version "3.12"
             buildPython "python3"
             pip {
-                // Lightweight pure-Python dependencies (no C/Rust extensions)
+                // Lightweight pure-Python dependencies used by android_server.py.
+                // Keep the Android build separate from the desktop FastAPI backend.
                 install "requests"
                 install "httpx"
                 install "feedparser"

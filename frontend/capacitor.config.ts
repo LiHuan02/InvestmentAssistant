@@ -5,8 +5,9 @@ const config: CapacitorConfig = {
   appName: 'Investment Assistant',
   webDir: 'dist',
   server: {
-    url: 'http://localhost:8000',
-    cleartext: true
+    url: 'http://127.0.0.1:8000',
+    cleartext: true,
+    androidScheme: 'http'
   },
   plugins: {
     SplashScreen: {
