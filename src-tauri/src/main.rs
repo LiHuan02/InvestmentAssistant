@@ -54,8 +54,8 @@ fn main() {
             *process.0.lock().unwrap() = Some(child);
 
             // Keep the receiver alive and surface sidecar startup/runtime errors.
-            thread::spawn(move || {
-                while let Ok(event) = events.recv() {
+            tauri::async_runtime::spawn(async move {
+                while let Some(event) = events.recv().await {
                     match event {
                         CommandEvent::Stdout(bytes) => {
                             println!("[Backend] {}", String::from_utf8_lossy(&bytes).trim());
