@@ -123,6 +123,8 @@ jobs:
         run: npm install -g @tauri-apps/cli@^2
 
       # ── Build Tauri ──
+      # The frontend is already built above. Tauri runs from src-tauri, so a
+      # relative `cd ../frontend` in beforeBuildCommand is not valid in CI.
       - name: Build Tauri app
         run: npx tauri build --target ${{ matrix.target }}
 
