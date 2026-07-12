@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { localBackendUrl, usesLocalBackend } from '../runtime';
 
 interface UseWebSocketOptions {
   onMessage?: (data: unknown) => void;
@@ -18,14 +19,8 @@ export function useWebSocket<T = unknown>(
 
   const connect = useCallback(() => {
     try {
-      const isTauri = Boolean(
-        (window as any).__TAURI__ ||
-        (window as any).__TAURI_INTERNALS__ ||
-        window.location.hostname === 'tauri.localhost' ||
-        window.location.protocol === 'tauri:'
-      );
-      const wsUrl = isTauri
-        ? `ws://127.0.0.1:8000${path}`
+      const wsUrl = usesLocalBackend()
+        ? `${localBackendUrl.replace('http://', 'ws://')}${path}`
         : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${path}`;
       const ws = new WebSocket(wsUrl);
 

@@ -29,28 +29,49 @@ async def _initial_fetch(market_service: MarketDataService, news_service: NewsSe
     logger.info("Initial data fetch complete")
 
 
+async def _initialize_chat_service(
+    app: FastAPI,
+    settings,
+    market_service: MarketDataService,
+    news_service: NewsService,
+):
+    try:
+        # ChatService initializes Chroma/LangChain and can be slow in a frozen
+        # executable. Do it after Uvicorn has started serving health checks.
+        app.state.chat_service = ChatService(settings, market_service, news_service)
+        app.state.ready = True
+        logger.info("Backend initialization complete")
+        asyncio.create_task(_initial_fetch(market_service, news_service))
+    except Exception:
+        logger.exception("Backend initialization failed")
+        app.state.init_error = "backend initialization failed; see backend.log"
+        app.state.ready = True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-
     market_service = MarketDataService(settings)
     news_service = NewsService()
-    chat_service = ChatService(settings, market_service, news_service)
 
     app.state.market_service = market_service
     app.state.news_service = news_service
-    app.state.chat_service = chat_service
+    app.state.chat_service = None
+    app.state.ready = False
+    app.state.init_error = None
+    app.state.settings = settings
 
     scheduler = create_scheduler(market_service, news_service, settings)
     scheduler.start()
     app.state.scheduler = scheduler
-    app.state.settings = settings
-    logger.info("Scheduler started")
-
-    asyncio.create_task(_initial_fetch(market_service, news_service))
+    app.state.init_task = asyncio.create_task(
+        _initialize_chat_service(app, settings, market_service, news_service)
+    )
+    logger.info("Backend process started; initializing services in background")
 
     yield
 
+    app.state.init_task.cancel()
     scheduler.shutdown()
     logger.info("Scheduler stopped")
 
@@ -81,7 +102,12 @@ app.include_router(ws.router)
 
 @app.get("/api/v1/health")
 async def health_check():
-    return {"status": "ok", "version": "0.1.0"}
+    return {
+        "status": "ok",
+        "version": "0.1.0",
+        "ready": getattr(app.state, "ready", False),
+        "error": getattr(app.state, "init_error", None),
+    }
 
 
 def _port_is_available(host: str, port: int) -> bool:
@@ -94,6 +120,7 @@ def run_server() -> None:
     """Run Uvicorn when launched as a PyInstaller sidecar."""
     host = os.getenv("HOST", settings.host)
     port = int(os.getenv("PORT", str(settings.port)))
+    logger.info("Starting Uvicorn on %s:%s", host, port)
     if not _port_is_available("127.0.0.1", port):
         logger.error("Port %s is already in use", port)
         return

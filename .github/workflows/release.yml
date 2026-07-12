@@ -90,6 +90,7 @@ jobs:
           mkdir -p ../src-tauri/binaries
           cp dist/investment-backend "../src-tauri/binaries/${{ matrix.sidecar-name }}"
           chmod +x "../src-tauri/binaries/${{ matrix.sidecar-name }}"
+          test -x "../src-tauri/binaries/${{ matrix.sidecar-name }}"
 
       - name: Build sidecar (Windows)
         if: runner.os == 'Windows'
@@ -99,6 +100,7 @@ jobs:
           uv run pyinstaller investment-backend.spec --clean --noconfirm
           New-Item -ItemType Directory -Force -Path ../src-tauri/binaries | Out-Null
           Copy-Item "dist/investment-backend.exe" "../src-tauri/binaries/${{ matrix.sidecar-name }}"
+          if (-not (Test-Path "../src-tauri/binaries/${{ matrix.sidecar-name }}")) { throw "Sidecar not found" }
 
       # ── macOS icon ──
       - name: Generate macOS icon
@@ -201,6 +203,9 @@ jobs:
           cp android_server.py "$DEST/"
           cp android_backend/*.py "$DEST/android_backend/"
           cp -r frontend/dist "$DEST/frontend/"
+          test -f "$DEST/android_server.py"
+          test -f "$DEST/android_backend/chat.py"
+          test -f "$DEST/frontend/dist/index.html"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3

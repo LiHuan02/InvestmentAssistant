@@ -35,6 +35,7 @@ android {
                 install "httpcore"
                 install "h11"
                 install "sgmllib3k"
+                install "pyyaml"
             }
             pyc {
                 src false

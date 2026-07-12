@@ -29,10 +29,6 @@ function AppContent() {
 
   const checkSetup = async () => {
     try {
-      if (localStorage.getItem('setup_complete') === 'true') {
-        setReady(true);
-        return;
-      }
       const s = await getAppSettings();
       if (s.configured) {
         localStorage.setItem('setup_complete', 'true');
@@ -41,6 +37,7 @@ function AppContent() {
         setNeedsSetup(true);
       }
     } catch {
+      // Keep the setup wizard for a real backend connection failure.
       setNeedsSetup(true);
     } finally {
       setLoading(false);

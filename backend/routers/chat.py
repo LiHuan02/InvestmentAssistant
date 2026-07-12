@@ -1,7 +1,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 
 logger = logging.getLogger(__name__)
 from fastapi.responses import StreamingResponse
@@ -16,6 +16,8 @@ router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 @router.post("/message")
 async def send_message(request_body: ChatRequest, request: Request):
     service = request.app.state.chat_service
+    if service is None:
+        raise HTTPException(status_code=503, detail="后端仍在初始化，请稍候重试")
 
     conv_id = request_body.conversation_id
     if not conv_id:
@@ -75,6 +77,8 @@ async def send_message(request_body: ChatRequest, request: Request):
 @router.get("/commands")
 async def get_commands(request: Request) -> list[QuickCommand]:
     service = request.app.state.chat_service
+    if service is None:
+        raise HTTPException(status_code=503, detail="后端仍在初始化，请稍候重试")
     return service.get_commands()
 
 
@@ -143,6 +147,8 @@ async def update_config(payload: dict = Body(...), request: Request = None):
 @router.get("/tools")
 async def list_tools(request: Request):
     service = request.app.state.chat_service
+    if service is None:
+        raise HTTPException(status_code=503, detail="后端仍在初始化，请稍候重试")
     tools = []
     for t in service._tools:
         tools.append({
@@ -155,6 +161,8 @@ async def list_tools(request: Request):
 @router.get("/mcp")
 async def list_mcp(request: Request):
     service = request.app.state.chat_service
+    if service is None:
+        raise HTTPException(status_code=503, detail="后端仍在初始化，请稍候重试")
     return service.mcp_list()
 
 
@@ -181,6 +189,8 @@ async def remove_mcp(payload: dict = Body(...)):
 @router.post("/mcp/reload")
 async def reload_mcp(request: Request):
     service = request.app.state.chat_service
+    if service is None:
+        raise HTTPException(status_code=503, detail="后端仍在初始化，请稍候重试")
     return service.reload()
 
 

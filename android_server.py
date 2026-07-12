@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 import asyncio
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 # Chaquopy places this module and the android_backend package in the same
@@ -334,7 +334,7 @@ def run_server(port: int = 8000):
     AndroidHandler.config = config
     AndroidHandler.dist_dir = dist_dir
 
-    server = HTTPServer(("127.0.0.1", port), AndroidHandler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), AndroidHandler)
     print(f"[Android] Server started on http://127.0.0.1:{port}")
     print(f"[Android] Serving frontend: {dist_dir}")
     print(f"[Android] AI Model: {config.get('ai_model', 'unknown')}")

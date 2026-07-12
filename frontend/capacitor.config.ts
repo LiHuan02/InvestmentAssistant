@@ -4,11 +4,8 @@ const config: CapacitorConfig = {
   appId: 'com.investment.assistant',
   appName: 'Investment Assistant',
   webDir: 'dist',
-  server: {
-    url: 'http://127.0.0.1:8000',
-    cleartext: true,
-    androidScheme: 'http'
-  },
+  // Keep the bundled Capacitor page as the initial document. Android starts
+  // its Python API asynchronously; the frontend talks to 127.0.0.1 directly.
   plugins: {
     SplashScreen: {
       launchShowDuration: 0

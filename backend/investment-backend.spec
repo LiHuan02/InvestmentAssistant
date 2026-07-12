@@ -14,11 +14,12 @@ backend_dir = Path(SPECPATH)
 project_root = backend_dir.parent
 
 a = Analysis(
-    ['main.py'],
+    ['launcher.py'],
     pathex=[str(backend_dir), str(project_root)],
     binaries=[],
     datas=[
         (str(backend_dir / 'mcp_config.yaml'), '.'),
+        (str(project_root / '.env.example'), '.'),
     ],
     hiddenimports=[
         # FastAPI / Uvicorn

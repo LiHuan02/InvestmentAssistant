@@ -8,19 +8,20 @@ import com.getcapacitor.BridgeActivity;
 
 /** Starts the embedded backend before loading the Capacitor WebView. */
 public class MainActivity extends BridgeActivity {
-    private static final int MAX_RETRIES = 60;
+    private static final int MAX_RETRIES = 90;
     private int retryCount = 0;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+        // Start before BridgeActivity loads the configured localhost URL.
         PythonBackendService.start(getApplicationContext());
+        super.onCreate(savedInstanceState);
         waitForBackend();
     }
 
     private void onBackendReady() {
-        // Capacitor loads the configured localhost URL after the backend is ready.
+        // The bundled Capacitor page is already loaded; API calls now use localhost.
     }
 
     private void waitForBackend() {
