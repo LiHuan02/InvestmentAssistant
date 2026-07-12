@@ -131,6 +131,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          export VERSION
           python - <<'PY'
           import json, os
           from pathlib import Path
@@ -147,6 +148,7 @@ jobs:
           )
           PY
           grep -n '"version"' src-tauri/tauri.conf.json
+          grep -n '^version' src-tauri/Cargo.toml | head -1
 
       - name: Build Tauri app
         run: npx tauri build --target ${{ matrix.target }}
@@ -215,7 +217,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          VERSION_CODE=$(python -c "print(int('${VERSION//./}'))")
+          VERSION_CODE=$(VERSION="$VERSION" python -c "import os; print(int(os.environ['VERSION'].replace('.', '')))")
           sed -i "s/versionCode .*/versionCode $VERSION_CODE/; s/versionName \".*\"/versionName \"$VERSION\"/" frontend/android/app/build.gradle
           grep -nE 'versionCode|versionName' frontend/android/app/build.gradle
 
